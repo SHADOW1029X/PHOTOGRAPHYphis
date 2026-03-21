@@ -1134,6 +1134,12 @@ input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;hei
 
 <script>
 // ════════════════════════════════════════════════════
+//  UTILS (must be first — used by IIFE below)
+// ════════════════════════════════════════════════════
+function $(id){ return document.getElementById(id); }
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// ════════════════════════════════════════════════════
 //  STATE
 // ════════════════════════════════════════════════════
 const S = {
@@ -1234,12 +1240,11 @@ function showPermGate(){
 }
 
 async function retryBoot() {
+  // Guard: already running — don't double-boot
+  if (S.permGranted) return;
+
   $('permErr').classList.remove('on');
-  const pg = $('permGate');
-  pg.style.opacity = '1';
-  pg.style.display = 'flex';
-  pg.style.transition = '';
-  pg.classList.remove('hiding');
+  showPermGate(); // always restore gate (display, opacity, transition, class)
 
   // Check if permissions are permanently denied
   let camStatus = 'prompt', geoStatus = 'prompt';
@@ -1247,6 +1252,7 @@ async function retryBoot() {
   try { const p = await navigator.permissions.query({name:'geolocation'}); geoStatus = p.state; } catch(e){}
 
   if (camStatus === 'denied' || geoStatus === 'denied') {
+    // Gate is visible behind the error — user can see it's still there
     let msg = 'Permissions are permanently blocked by your browser.<br><br>';
     msg += 'Go to browser settings → Site settings → Allow <strong>Camera</strong> and <strong>Location</strong> for this site.<br><br>';
     msg += '<small>After allowing, refresh the page and try again.</small>';
@@ -1255,7 +1261,7 @@ async function retryBoot() {
     return;
   }
 
-  // Normal retry — this time the popup WILL appear
+  // State is 'prompt' or 'granted' — call boot(), which will trigger the OS prompt
   setTimeout(() => boot(), 300);
 }
 
@@ -1270,6 +1276,9 @@ async function hidePermGate(){
 let _booted = false; // prevent double-init of event listeners
 
 async function boot(){
+  // Guard: already running successfully — don't restart
+  if (S.permGranted) return;
+
   await hidePermGate();
   $('loadScreen').classList.add('on');
 
@@ -1307,26 +1316,27 @@ async function boot(){
 
   } catch(e){
     $('loadScreen').classList.remove('on');
+    showPermGate(); // always restore the gate (resets display, opacity, transition, class)
     $('permErr').classList.add('on');
-    // Reset gate opacity so it's ready if user retries
-    const pg=$('permGate');
-    pg.style.opacity='1';
-    pg.style.transition='';
-    pg.classList.remove('hiding');
 
-        let msg = 'Camera & Location access required';
+    let msg = 'Camera & Location access required';
     let detail = 'Permission was denied or blocked permanently.<br><br>';
     detail += 'Please allow both in your browser site settings and click TRY AGAIN.';
     if (e.name === 'NotAllowedError' || e.code === 1) detail = 'Permission denied. Allow Camera + Location in site settings.';
     else if (e.name === 'NotFoundError') detail = 'No camera detected on this device.';
     $('permErrMsg').innerHTML = `${msg}<br><br><small>${detail}</small>`;
-  } // ← THIS CLOSES THE catch
-} // ← THIS CLOSES THE boot() function
+  }
+}
 
 // ════════════════════════════════════════════════════
 //  CAMERA
 // ════════════════════════════════════════════════════
 async function startCamera(facing){
+  // Guard: mediaDevices is only available in secure contexts (HTTPS / localhost)
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new DOMException('Camera API unavailable. Open the app over HTTPS.', 'NotSupportedError');
+  }
+
   if(S.stream) S.stream.getTracks().forEach(t=>t.stop());
   S.facing = facing || S.facing;
 
@@ -1360,9 +1370,8 @@ function applyMirror(){
 // ════════════════════════════════════════════════════
 function getCSS(){
   const a = S.adj;
-  let css = `brightness(${a.b}%) contrast(${a.c}%) saturate(${a.s}%) hue-rotate(${a.h}deg)`;
+  let css = `brightness(${a.b}%) contrast(${a.c}%) saturate(${a.s}%) hue-rotate(${a.h + (a.w < 0 ? a.w : 0)}deg)`;
   if(a.w>0) css+=` sepia(${a.w/50*.4})`;
-  else if(a.w<0) css+=` hue-rotate(${a.w}deg)`;
   if(a.f>0) css+=` contrast(${100-a.f*.2}%)`;
   const f = FILTERS.find(x=>x.id===S.filter);
   if(f?.css) css+=' '+f.css;
@@ -1635,8 +1644,9 @@ function initControls(){
   });
 
   $('flipBtn').addEventListener('click',()=>{
-    startCamera(S.facing==='environment'?'user':'environment');
-    showToast(S.facing==='user'?'Front camera':'Rear camera');
+    const newFacing = S.facing==='environment' ? 'user' : 'environment';
+    startCamera(newFacing);
+    showToast(newFacing==='user'?'Front camera':'Rear camera');
   });
 
   $('galThumb').addEventListener('click',openGallery);
@@ -2062,6 +2072,8 @@ function initBeforeAfter(){
 // ════════════════════════════════════════════════════
 async function runAI(){
   if(S.capturedType==='video') return showToast('AI works on photos only');
+  const API_KEY = ''; // ← PASTE YOUR ANTHROPIC API KEY HERE
+  if(!API_KEY){ showToast('Add your API key to enable AI'); return; }
   $('aiModal').classList.add('on');
   $('aiLoadingState').style.display='block';
   $('aiResultBox').classList.remove('on');
@@ -2081,7 +2093,7 @@ async function runAI(){
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': 'sk-ant-api03-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX', // ← PASTE YOUR REAL ANTHROPIC KEY
+        'x-api-key': API_KEY,
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
@@ -2205,8 +2217,6 @@ function hyp(t){ return Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].c
 
 let _tt;
 function showToast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(_tt); _tt=setTimeout(()=>t.classList.remove('on'),2200); }
-function $(id){ return document.getElementById(id); }
-function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 </script>
 </body>
 </html>
