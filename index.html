@@ -979,6 +979,10 @@ input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;hei
       <button class="tool-btn" id="tbStickers"><div class="tb-ico">😊</div><div class="tb-lbl">Stickers</div></button>
       <button class="tool-btn on" id="tbGrid"><div class="tb-ico">⊞</div><div class="tb-lbl">Grid</div></button>
       <button class="tool-btn" id="tbHorizon"><div class="tb-ico">—</div><div class="tb-lbl">Level</div></button>
+      <button class="tool-btn" id="clearEditsBtn">
+  <div class="tb-ico">🗑️</div>
+  <div class="tb-lbl">CLEAR</div>
+</button>
       <div id="timerDots">
         <div class="tdot on" data-t="0">OFF</div>
         <div class="tdot" data-t="3">3s</div>
@@ -1229,9 +1233,30 @@ function showPermGate(){
   pg.classList.remove('hiding');
 }
 
-function retryBoot(){
+async function retryBoot() {
   $('permErr').classList.remove('on');
-  showPermGate();
+  const pg = $('permGate');
+  pg.style.opacity = '1';
+  pg.style.display = 'flex';
+  pg.style.transition = '';
+  pg.classList.remove('hiding');
+
+  // Check if permissions are permanently denied
+  let camStatus = 'prompt', geoStatus = 'prompt';
+  try { const p = await navigator.permissions.query({name:'camera'}); camStatus = p.state; } catch(e){}
+  try { const p = await navigator.permissions.query({name:'geolocation'}); geoStatus = p.state; } catch(e){}
+
+  if (camStatus === 'denied' || geoStatus === 'denied') {
+    let msg = 'Permissions are permanently blocked by your browser.<br><br>';
+    msg += 'Go to browser settings → Site settings → Allow <strong>Camera</strong> and <strong>Location</strong> for this site.<br><br>';
+    msg += '<small>After allowing, refresh the page and try again.</small>';
+    $('permErrMsg').innerHTML = msg;
+    $('permErr').classList.add('on');
+    return;
+  }
+
+  // Normal retry — this time the popup WILL appear
+  setTimeout(() => boot(), 300);
 }
 
 async function hidePermGate(){
@@ -1289,14 +1314,14 @@ async function boot(){
     pg.style.transition='';
     pg.classList.remove('hiding');
 
-    const msg = e?.message === 'no-geo'
-      ? 'GPS is not available on this device. Both camera and location are required.'
-      : (e?.code === 1
-        ? 'Location permission was denied. Please allow location access in your browser settings.'
-        : (S.stream ? 'Location could not be obtained. Please check your GPS settings.' : 'Camera permission was denied. Please allow camera access in your browser settings.'));
-    $('permErrMsg').textContent = msg;
-  }
-}
+        let msg = 'Camera & Location access required';
+    let detail = 'Permission was denied or blocked permanently.<br><br>';
+    detail += 'Please allow both in your browser site settings and click TRY AGAIN.';
+    if (e.name === 'NotAllowedError' || e.code === 1) detail = 'Permission denied. Allow Camera + Location in site settings.';
+    else if (e.name === 'NotFoundError') detail = 'No camera detected on this device.';
+    $('permErrMsg').innerHTML = `${msg}<br><br><small>${detail}</small>`;
+  } // ← THIS CLOSES THE catch
+} // ← THIS CLOSES THE boot() function
 
 // ════════════════════════════════════════════════════
 //  CAMERA
@@ -1660,6 +1685,7 @@ function initControls(){
   $('tbGrid').addEventListener('click',()=>{ S.showGrid=!S.showGrid; $('grid').classList.toggle('on',S.showGrid); $('tbGrid').classList.toggle('on',S.showGrid); });
   $('tbHorizon').addEventListener('click',()=>{ S.showHorizon=!S.showHorizon; $('horizon').classList.toggle('on',S.showHorizon); $('tbHorizon').classList.toggle('on',S.showHorizon); showToast(S.showHorizon?'Level ON':'Level OFF'); });
   $('histoBtn').addEventListener('click',()=>{ S.showHisto=!S.showHisto; $('histoWidget').classList.toggle('on',S.showHisto); $('histoBtn').classList.toggle('active-gold',S.showHisto); showToast(S.showHisto?'Histogram ON':'Histogram OFF'); });
+    $('clearEditsBtn').addEventListener('click', clearAllEdits);
 
   // Timer dots
   document.querySelectorAll('.tdot').forEach(d=>{
@@ -1671,6 +1697,14 @@ function initControls(){
   });
 
   $('backdrop').addEventListener('click',closeAllDrawers);
+}
+
+function clearAllEdits() {
+  S.drawHistory = [];
+  $('textLayer').innerHTML = '';
+  $('stickerLayer').innerHTML = '';
+  if ($('drawCanvas').classList.contains('on')) renderDrawCanvas();
+  showToast('All edits cleared');
 }
 
 function initSettings(){
@@ -1849,21 +1883,49 @@ function showPreview(url,type){
   $('textLayer').querySelectorAll('.txt-item').forEach(el=>{
     const cl=el.cloneNode(true); $('pvCaptionLayer').appendChild(cl); makeDraggable(cl);
   });
+
+  // NEW: Also port stickers (fixes the bug)
+  $('stickerLayer').querySelectorAll('div').forEach(el => {
+    if (el.textContent && el.textContent.trim()) {
+      const clone = el.cloneNode(true);
+      clone.style.pointerEvents = 'all';
+      $('pvCaptionLayer').appendChild(clone);
+      makeDraggable(clone);
+    }
+  });
+
   $('preview').classList.add('on');
 }
 
 // ════════════════════════════════════════════════════
 //  GALLERY
 // ════════════════════════════════════════════════════
-function saveToGallery(item){
+function saveToGallery(item) {
   S.gallery.unshift(item);
-  if(S.gallery.length>80) S.gallery.pop();
-  try{ const ts=S.gallery.filter(g=>g.type==='photo').slice(0,30); localStorage.setItem('photon4_gal',JSON.stringify(ts)); }catch{}
+  if (S.gallery.length > 80) S.gallery.pop();
+
+  // Persist photos + video metadata (videos lose blob on reload)
+  const persistable = S.gallery.map(it => {
+    if (it.type === 'photo') return { ...it };
+    if (it.type === 'video') return { type: 'video', loc: it.loc || '', time: it.time };
+    return null;
+  }).filter(Boolean);
+
+  try {
+    localStorage.setItem('photon4_gal', JSON.stringify(persistable.slice(0, 30)));
+  } catch (e) {}
   updateGalThumb();
 }
 
 function loadGallery(){
-  try{ const r=localStorage.getItem('photon4_gal'); if(r) S.gallery=JSON.parse(r); }catch{}
+  try{ 
+    const r=localStorage.getItem('photon4_gal'); 
+    if(r) S.gallery=JSON.parse(r); 
+  }catch{}
+  // Mark videos as non-playable after reload
+  S.gallery.forEach(item => {
+    if (item.type === 'video') item.blobUrl = null;
+  });
   updateGalThumb();
 }
 
@@ -2013,18 +2075,26 @@ async function runAI(){
     await new Promise(r=>img.onload=r);
     const c=document.createElement('canvas'); c.width=320; c.height=Math.round(320*img.height/img.width);
     c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-    const b64=c.toDataURL('image/jpeg',.75).split(',')[1];
+        const b64 = c.toDataURL('image/jpeg', .75).split(',')[1];
 
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',max_tokens:1000,
-        messages:[{role:'user',content:[
-          {type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},
-          {type:'text',text:`You are a professional photo editing AI. Analyse this photo and respond ONLY with valid JSON (no markdown, no extra text):
-{"scene":"brief scene description (max 6 words)","mood":"single word mood","issues":["issue1","issue2"],"suggestions":{"brightness":<0-200>,"contrast":<0-200>,"saturation":<0-300>,"hue":<0-360>,"vignette":<0-100>,"warmth":<-50 to 50>,"fade":<0-100>,"filter":"one of: none|vivid|vintage|bw|warm|cool|neon|hdr|fade|film|cyber|golden|mist|punch|dusk|arctic|rose|teal"},"reasoning":"2 concise sentences explaining your choices"}`}
-        ]}]
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': 'sk-ant-api03-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX', // ← PASTE YOUR REAL ANTHROPIC KEY
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
+            { type: 'text', text: `You are a professional photo editing AI. Analyse this photo and respond ONLY with valid JSON (no markdown, no extra text):
+{"scene":"brief scene description (max 6 words)","mood":"single word mood","issues":["issue1","issue2"],"suggestions":{"brightness":<0-200>,"contrast":<0-200>,"saturation":<0-300>,"hue":<0-360>,"vignette":<0-100>,"warmth":<-50 to 50>,"fade":<0-100>,"filter":"one of: none|vivid|vintage|bw|warm|cool|neon|hdr|fade|film|cyber|golden|mist|punch|dusk|arctic|rose|teal"},"reasoning":"2 concise sentences explaining your choices"}` }
+          ]
+        }]
       })
     });
     clearInterval(tick);
