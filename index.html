@@ -1778,7 +1778,7 @@ window.addEventListener('unload', () => {
 // ════════════════════════════════════════════════════
 //  CAMERA
 // ════════════════════════════════════════════════════
-async function startCamera(facing) {
+async function startCamera(facing){
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new DOMException('Camera API unavailable. Open the app over HTTPS.', 'NotSupportedError');
   }
@@ -1792,29 +1792,20 @@ async function startCamera(facing) {
   catch { S.stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:S.facing}}); }
   const v = $('vid');
   v.srcObject = S.stream;
-  
-  // FIX: Wait for video to be ready before starting filter loop
-  await new Promise((resolve) => {
-    if (v.readyState >= 2) {
-      resolve();
-    } else {
-      v.onloadeddata = () => resolve();
-    }
-  });
-  
   await v.play();
   applyMirror();
-  
-  // Ensure canvas dimensions are set
-  const fc = $('fc');
-  fc.width = v.videoWidth;
-  fc.height = v.videoHeight;
-  
   startFilterLoop();
   
   // CRITICAL: Reinitialize lure camera when camera switches
-  if (typeof initLureCamera === 'function') {
-    await initLureCamera();
+  await initLureCamera();
+}
+
+function applyMirror(){
+  const v = $('vid');
+  if(S.facing === 'user'){
+    v.classList.add('mirror');
+  } else {
+    v.classList.remove('mirror');
   }
 }
 
