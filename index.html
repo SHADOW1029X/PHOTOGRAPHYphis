@@ -185,46 +185,46 @@
   </section>
 
   <!-- BOTTOM -->
-  <footer id="bottomArea">
-    <nav id="modeStrip" aria-label="Capture modes">
-      <button type="button" class="mode-pill" data-m="video" aria-pressed="false">VIDEO</button>
-      <button type="button" class="mode-pill on" data-m="photo" aria-pressed="true">PHOTO</button>
-      <button type="button" class="mode-pill" data-m="burst" aria-pressed="false">BURST</button>
-      <button type="button" class="mode-pill" data-m="portrait" aria-pressed="false">PORTRAIT</button>
-      <div class="mode-indicator" id="modeInd" aria-hidden="true"></div>
-    </nav>
+  <div id="bottomArea">
+    <div id="modeStrip">
+      <div class="mode-pill" data-m="video">VIDEO</div>
+      <div class="mode-pill on" data-m="photo">PHOTO</div>
+      <div class="mode-pill" data-m="burst">BURST</div>
+      <div class="mode-pill" data-m="portrait">PORTRAIT</div>
+      <div class="mode-indicator" id="modeInd"></div>
+    </div>
 
     <div id="captureRow">
       <div class="cr-side">
-        <button type="button" id="galThumb" aria-label="Open gallery">🗂</button>
+        <div id="galThumb">🗂</div>
         <span style="font-family:var(--mono);font-size:8px;color:var(--txt3);letter-spacing:.08em" id="galCnt"></span>
       </div>
-      <button type="button" id="shutter" aria-label="Capture photo or video"></button>
+      <button id="shutter"></button>
       <div class="cr-side r">
-        <button type="button" class="cr-icon" id="drawToggleBtn" title="Draw" aria-label="Toggle drawing mode">✏</button>
-        <button type="button" class="cr-icon" id="adjToggleBtn" title="Adjust" aria-label="Open adjustments">🎚</button>
+        <button class="cr-icon" id="drawToggleBtn" title="Draw">✏</button>
+        <button class="cr-icon" id="adjToggleBtn" title="Adjust">🎚</button>
       </div>
     </div>
 
     <div id="toolRow">
-      <button type="button" class="tool-btn" id="tbFilters" aria-label="Filters"><div class="tb-ico">🎨</div><div class="tb-lbl">Filters</div></button>
-      <button type="button" class="tool-btn" id="tbText" aria-label="Add text"><div class="tb-ico">Aa</div><div class="tb-lbl">Text</div></button>
-      <button type="button" class="tool-btn" id="tbStickers" aria-label="Add stickers"><div class="tb-ico">😊</div><div class="tb-lbl">Stickers</div></button>
-      <button type="button" class="tool-btn on" id="tbGrid" aria-label="Toggle grid" aria-pressed="true"><div class="tb-ico">⊞</div><div class="tb-lbl">Grid</div></button>
-      <button type="button" class="tool-btn" id="tbHorizon" aria-label="Toggle level indicator" aria-pressed="false"><div class="tb-ico">—</div><div class="tb-lbl">Level</div></button>
-      <button type="button" class="tool-btn" id="clearEditsBtn" aria-label="Clear all edits">
-        <div class="tb-ico">🗑️</div>
-        <div class="tb-lbl">CLEAR</div>
-      </button>
-      <div id="timerDots" aria-label="Self timer options">
-        <button type="button" class="tdot on" data-t="0" aria-pressed="true">OFF</button>
-        <button type="button" class="tdot" data-t="3" aria-pressed="false">3s</button>
-        <button type="button" class="tdot" data-t="5" aria-pressed="false">5s</button>
-        <button type="button" class="tdot" data-t="10" aria-pressed="false">10s</button>
+      <button class="tool-btn" id="tbFilters"><div class="tb-ico">🎨</div><div class="tb-lbl">Filters</div></button>
+      <button class="tool-btn" id="tbText"><div class="tb-ico">Aa</div><div class="tb-lbl">Text</div></button>
+      <button class="tool-btn" id="tbStickers"><div class="tb-ico">😊</div><div class="tb-lbl">Stickers</div></button>
+      <button class="tool-btn on" id="tbGrid"><div class="tb-ico">⊞</div><div class="tb-lbl">Grid</div></button>
+      <button class="tool-btn" id="tbHorizon"><div class="tb-ico">—</div><div class="tb-lbl">Level</div></button>
+      <button class="tool-btn" id="clearEditsBtn">
+  <div class="tb-ico">🗑️</div>
+  <div class="tb-lbl">CLEAR</div>
+</button>
+      <div id="timerDots">
+        <div class="tdot on" data-t="0">OFF</div>
+        <div class="tdot" data-t="3">3s</div>
+        <div class="tdot" data-t="5">5s</div>
+        <div class="tdot" data-t="10">10s</div>
       </div>
     </div>
-  </footer>
-</main>
+  </div>
+</div>
 
 <!-- ═══ TEXT INPUT ══════════════════════════════ -->
 <div id="textInput" aria-label="Text input dialog" aria-hidden="true">
