@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>PHOTON — Pro Camera</title>
+  
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&family=Bebas+Neue&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ═══ PERMISSION GATE ════════════════════════ -->
+<main id="permGate" aria-label="Permission screen">
+  <div id="pgBg" aria-hidden="true"></div>
+  <canvas id="pgCanvas" aria-hidden="true"></canvas>
+  <div class="pg-aperture" aria-hidden="true"></div>
+  <div class="pg-corner tl" aria-hidden="true"></div>
+  <div class="pg-corner tr" aria-hidden="true"></div>
+  <div class="pg-corner bl" aria-hidden="true"></div>
+  <div class="pg-corner br" aria-hidden="true"></div>
+
+  <div class="pg-content">
+    <div class="pg-wordmark-wrap">
+      <div class="pg-wordmark">PHOTON</div>
+      <span class="pg-wordmark-badge">v4</span>
+    </div>
+    <div class="pg-tagline">Professional Camera Studio</div>
+    <div class="pg-tagline">NYTHERION</div>
+
+    <div class="pg-pills">
+      <div class="pg-pill"><div class="pg-pill-dot" style="background:var(--gold)"></div>18 Filters</div>
+      <div class="pg-pill"><div class="pg-pill-dot" style="background:var(--neon)"></div>AI Enhance</div>
+      <div class="pg-pill"><div class="pg-pill-dot" style="background:var(--blue)"></div>4K Video</div>
+      <div class="pg-pill"><div class="pg-pill-dot" style="background:var(--purple)"></div>GPS Tags</div>
+      <div class="pg-pill"><div class="pg-pill-dot" style="background:var(--pink)"></div>Burst Mode</div>
+    </div>
+
+    <div class="pg-perms">
+      <div class="pg-perm">
+        <div class="pg-perm-ico cam" aria-hidden="true">📷</div>
+        <div class="pg-perm-text">
+          <div class="pg-perm-label">Camera Access</div>
+          <div class="pg-perm-note">Required · Photo, video &amp; live filters</div>
+        </div>
+        <div class="pg-perm-status" id="camStatus" aria-label="Camera permission status">—</div>
+      </div>
+      <div class="pg-perm">
+        <div class="pg-perm-ico loc" aria-hidden="true">📍</div>
+        <div class="pg-perm-text">
+          <div class="pg-perm-label">Location Access</div>
+          <div class="pg-perm-note">Required · GPS metadata on every shot</div>
+        </div>
+        <div class="pg-perm-status" id="locStatus" aria-label="Location permission status">—</div>
+      </div>
+    </div>
+
+    <button type="button" class="pg-btn" id="startBtn">CAPTURE THE MOMENTS</button>
+    <div class="pg-hint">By The Developer NYTHERION</div>
+  </div>
+</main>
+
+<!-- ═══ PERMISSION ERROR ════════════════════════ -->
+<div id="permErr" aria-hidden="true">
+  <div class="pe-ring" aria-hidden="true">🚫</div>
+  <div class="pe-h">ACCESS DENIED</div>
+  <div class="pe-p" id="permErrMsg">Camera and location permissions are required. Please allow them in your browser settings.</div>
+  <div class="pe-steps">
+    <div class="pe-step"><strong>Safari:</strong> Settings → Safari → Camera &amp; Location → Allow</div>
+    <div class="pe-step"><strong>Chrome:</strong> Address bar lock icon → Site settings → Allow both</div>
+    <div class="pe-step"><strong>Firefox:</strong> Address bar shield → Permissions → Allow</div>
+  </div>
+  <button type="button" class="pe-btn" id="retryBtn">TRY AGAIN</button>
+</div>
+
+<!-- ═══ LOADING ════════════════════════════════ -->
+<div id="loadScreen" aria-hidden="true">
+  <div class="ls-logo">PHOTON</div>
+  <div class="ls-bar"><div class="ls-fill"></div></div>
+  <div class="ls-txt">Initialising camera…</div>
+</div>
+
+<!-- ═══ APP ═══════════════════════════════════ -->
+<main id="app" aria-label="Camera viewfinder" hidden>
+
+  <!-- VIEWFINDER -->
+  <section id="vf" aria-label="Camera viewfinder area">
+    <video id="vid" autoplay playsinline muted aria-label="Camera preview"></video>
+    <canvas id="fc" aria-hidden="true"></canvas>
+    <canvas id="drawCanvas" aria-label="Drawing canvas"></canvas>
+    <div id="textLayer" aria-label="Text overlay layer"></div>
+    <div id="stickerLayer" aria-label="Sticker overlay layer"></div>
+
+    <!-- Grid -->
+    <div id="grid" aria-label="Composition grid" aria-hidden="true">
+      <div class="gl glh"></div><div class="gl glh"></div>
+      <div class="gl glv" style="left:33.33%"></div><div class="gl glv" style="left:66.66%"></div>
+      <div class="gl-dot" style="top:33.33%;left:33.33%"></div>
+      <div class="gl-dot" style="top:33.33%;left:66.66%"></div>
+      <div class="gl-dot" style="top:66.66%;left:33.33%"></div>
+      <div class="gl-dot" style="top:66.66%;left:66.66%"></div>
+    </div>
+
+    <!-- Horizon -->
+    <div id="horizon" aria-label="Horizon level indicator" aria-hidden="true">
+      <div class="hz-h"></div>
+      <div class="hz-v"></div>
+      <div class="hz-dot" id="hzDot"></div>
+    </div>
+
+    <!-- Top nav -->
+    <nav id="topNav" aria-label="Camera controls">
+      <div class="tn-side">
+        <button type="button" class="tn-icon" id="settingsBtn" title="Settings" aria-label="Settings">⚙</button>
+        <button type="button" class="tn-icon" id="flashBtn" title="Flash" aria-label="Flash mode">⚡</button>
+      </div>
+      <button type="button" class="tn-zoom" id="zoomCycleBtn" aria-label="Zoom level">1×</button>
+      <div class="tn-side">
+        <button type="button" class="tn-icon" id="histoBtn" title="Histogram" aria-label="Histogram">📊</button>
+        <button type="button" class="tn-icon" id="flipBtn" title="Flip camera" aria-label="Switch front/back camera">🔄</button>
+      </div>
+    </nav>
+
+    <!-- Histogram -->
+    <div id="histoWidget" aria-label="Live histogram" aria-hidden="true"><canvas id="histoCanvas" aria-label="Histogram visualization"></canvas></div>
+
+    <!-- Info HUD -->
+    <div id="infoHud" aria-live="polite">
+      <div class="info-chip" id="isoChip">ISO 100</div>
+      <div class="info-chip" id="exposureChip">1/60s</div>
+    </div>
+
+    <!-- Draw toolbar -->
+    <div id="drawToolbar" aria-label="Drawing tools" aria-hidden="true">
+      <button type="button" class="dt-btn" id="dtUndo" title="Undo" aria-label="Undo last drawing">↩</button>
+      <button type="button" class="dt-btn" id="dtErase" title="Eraser" aria-label="Toggle eraser mode">⊘</button>
+      <button type="button" class="dt-btn" id="dtClear" title="Clear all" aria-label="Clear all drawings">🗑</button>
+      <div class="dt-divider" aria-hidden="true"></div>
+      <div class="dt-tips" aria-label="Pen tip styles">
+        <button type="button" class="dt-tip on" data-tip="round" title="Round" aria-label="Round pen tip" aria-pressed="true">
+          <svg viewBox="0 0 18 14" aria-hidden="true"><circle cx="9" cy="7" r="4" fill="currentColor"/></svg>
+        </button>
+        <button type="button" class="dt-tip" data-tip="square" title="Square" aria-label="Square pen tip" aria-pressed="false">
+          <svg viewBox="0 0 18 14" aria-hidden="true"><rect x="3" y="3" width="12" height="8" rx="1" fill="currentColor"/></svg>
+        </button>
+        <button type="button" class="dt-tip" data-tip="calligraphy" title="Calligraphy" aria-label="Calligraphy pen tip" aria-pressed="false">
+          <svg viewBox="0 0 18 14" aria-hidden="true"><ellipse cx="9" cy="7" rx="7" ry="3" transform="rotate(-30 9 7)" fill="currentColor"/></svg>
+        </button>
+      </div>
+      <div class="dt-divider" aria-hidden="true"></div>
+      <div class="dt-slider-wrap">
+        <label id="dt-size-label" class="dt-slider-lbl">SIZE</label>
+        <input id="dt-size" type="range" min="2" max="40" value="6" orient="vertical" aria-labelledby="dt-size-label" aria-label="Brush size">
+      </div>
+      <div class="dt-slider-wrap">
+        <label id="dt-opacity-label" class="dt-slider-lbl">OPAC</label>
+        <input id="dt-opacity" type="range" min="10" max="100" value="100" orient="vertical" aria-labelledby="dt-opacity-label" aria-label="Brush opacity">
+      </div>
+      <div class="dt-divider" aria-hidden="true"></div>
+      <div class="dt-colors" id="dtColors" aria-label="Color palette"></div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hudLoc" aria-live="polite"><div id="locCity" class="loc-city">ACQUIRING GPS…</div><div id="locCoords" class="loc-coords"></div></div>
+    <div id="hudTime" aria-live="polite"><div id="timeDis" class="t-time"></div><div id="dateDis" class="t-date"></div></div>
+
+    <!-- REC badge -->
+    <div id="recBadge" aria-label="Recording in progress" aria-hidden="true"><div class="rec-dot"></div><span id="recTimer">00:00</span></div>
+
+    <!-- Focus box -->
+    <div id="focusBox" aria-label="Focus indicator" aria-hidden="true">
+      <div class="fb-corner fbc-tl"></div><div class="fb-corner fbc-tr"></div>
+      <div class="fb-corner fbc-bl"></div><div class="fb-corner fbc-br"></div>
+    </div>
+    <div id="zoomRing" aria-live="polite"></div>
+    <div id="burstViz" aria-label="Burst mode progress" aria-hidden="true"><div class="bv-num" id="burstNum">0</div><div class="bv-dots" id="burstDots"></div></div>
+    <div id="flashEl" aria-hidden="true"></div>
+    <div id="timerNum" aria-live="polite"></div>
+
+    <!-- Filter strip -->
+    <div id="filterStrip" aria-label="Filter selection" aria-hidden="true"><div id="fScroll"></div></div>
+  </section>
+
+  <!-- BOTTOM -->
+  <footer id="bottomArea">
+    <nav id="modeStrip" aria-label="Capture modes">
+      <button type="button" class="mode-pill" data-m="video" aria-pressed="false">VIDEO</button>
+      <button type="button" class="mode-pill on" data-m="photo" aria-pressed="true">PHOTO</button>
+      <button type="button" class="mode-pill" data-m="burst" aria-pressed="false">BURST</button>
+      <button type="button" class="mode-pill" data-m="portrait" aria-pressed="false">PORTRAIT</button>
+      <div class="mode-indicator" id="modeInd" aria-hidden="true"></div>
+    </nav>
+
+    <div id="captureRow">
+      <div class="cr-side">
+        <button type="button" id="galThumb" aria-label="Open gallery">🗂</button>
+        <span style="font-family:var(--mono);font-size:8px;color:var(--txt3);letter-spacing:.08em" id="galCnt"></span>
+      </div>
+      <button type="button" id="shutter" aria-label="Capture photo or video"></button>
+      <div class="cr-side r">
+        <button type="button" class="cr-icon" id="drawToggleBtn" title="Draw" aria-label="Toggle drawing mode">✏</button>
+        <button type="button" class="cr-icon" id="adjToggleBtn" title="Adjust" aria-label="Open adjustments">🎚</button>
+      </div>
+    </div>
+
+    <div id="toolRow">
+      <button type="button" class="tool-btn" id="tbFilters" aria-label="Filters"><div class="tb-ico">🎨</div><div class="tb-lbl">Filters</div></button>
+      <button type="button" class="tool-btn" id="tbText" aria-label="Add text"><div class="tb-ico">Aa</div><div class="tb-lbl">Text</div></button>
+      <button type="button" class="tool-btn" id="tbStickers" aria-label="Add stickers"><div class="tb-ico">😊</div><div class="tb-lbl">Stickers</div></button>
+      <button type="button" class="tool-btn on" id="tbGrid" aria-label="Toggle grid" aria-pressed="true"><div class="tb-ico">⊞</div><div class="tb-lbl">Grid</div></button>
+      <button type="button" class="tool-btn" id="tbHorizon" aria-label="Toggle level indicator" aria-pressed="false"><div class="tb-ico">—</div><div class="tb-lbl">Level</div></button>
+      <button type="button" class="tool-btn" id="clearEditsBtn" aria-label="Clear all edits">
+        <div class="tb-ico">🗑️</div>
+        <div class="tb-lbl">CLEAR</div>
+      </button>
+      <div id="timerDots" aria-label="Self timer options">
+        <button type="button" class="tdot on" data-t="0" aria-pressed="true">OFF</button>
+        <button type="button" class="tdot" data-t="3" aria-pressed="false">3s</button>
+        <button type="button" class="tdot" data-t="5" aria-pressed="false">5s</button>
+        <button type="button" class="tdot" data-t="10" aria-pressed="false">10s</button>
+      </div>
+    </div>
+  </footer>
+</main>
+
+<!-- ═══ TEXT INPUT ══════════════════════════════ -->
+<div id="textInput" aria-label="Text input dialog" aria-hidden="true">
+  <div class="ti-row">
+    <label for="tiField" class="visually-hidden">Text caption</label>
+    <input id="tiField" placeholder="Type something…" maxlength="60" type="text" aria-label="Enter your text">
+  </div>
+  <div class="ti-row">
+    <button type="button" class="ti-style-btn on" data-bg="bg-none" aria-pressed="true">None</button>
+    <button type="button" class="ti-style-btn" data-bg="bg-black" aria-pressed="false">Dark</button>
+    <button type="button" class="ti-style-btn" data-bg="bg-white" aria-pressed="false">Light</button>
+    <div class="ti-colors" id="tiColors" aria-label="Text colors"></div>
+  </div>
+  <div class="ti-row">
+    <button type="button" class="ti-cancel" id="tiCancelBtn" aria-label="Cancel text input">✕ CANCEL</button>
+    <button type="button" class="ti-add" id="tiAddBtn" aria-label="Add text to photo">✓ ADD TEXT</button>
+  </div>
+</div>
+
+<!-- ═══ ADJUST DRAWER ═══════════════════════════ -->
+<div id="adjDrawer" class="drawer" aria-label="Image adjustment controls" aria-hidden="true">
+  <div class="drawer-handle"></div>
+  <div class="drawer-title">Adjustments</div>
+  <div class="adj-row">
+    <label class="adj-lbl" for="slB">Brightness</label>
+    <input class="adj-sl" type="range" id="slB" min="0" max="200" value="100">
+    <span class="adj-val" id="vB">100</span>
+  </div>
+  <div class="adj-row">
+    <label class="adj-lbl" for="slC">Contrast</label>
+    <input class="adj-sl" type="range" id="slC" min="0" max="200" value="100">
+    <span class="adj-val" id="vC">100</span>
+  </div>
+  <div class="adj-row">
+    <label class="adj-lbl" for="slS">Saturation</label>
+    <input class="adj-sl" type="range" id="slS" min="0" max="300" value="100">
+    <span class="adj-val" id="vS">100</span>
+  </div>
+  <div class="adj-row">
+    <label class="adj-lbl" for="slH">Hue Shift</label>
+    <input class="adj-sl" type="range" id="slH" min="0" max="360" value="0">
+    <span class="adj-val" id="vH">0</span>
+  </div>
+  <div class="adj-row">
+    <label class="adj-lbl" for="slV">Vignette</label>
+    <input class="adj-sl" type="range" id="slV" min="0" max="100" value="0">
+    <span class="adj-val" id="vV">0</span>
+  </div>
+  <div class="adj-row">
+    <label class="adj-lbl" for="slW">Warmth</label>
+    <input class="adj-sl" type="range" id="slW" min="-50" max="50" value="0">
+    <span class="adj-val" id="vW">0</span>
+  </div>
+  <div class="adj-row">
+    <label class="adj-lbl" for="slF">Fade</label>
+    <input class="adj-sl" type="range" id="slF" min="0" max="100" value="0">
+    <span class="adj-val" id="vF">0</span>
+  </div>
+  <div class="adj-row">
+    <label class="adj-lbl" for="slSh">Sharpen</label>
+    <input class="adj-sl" type="range" id="slSh" min="0" max="100" value="0">
+    <span class="adj-val" id="vSh">0</span>
+  </div>
+  <button type="button" class="adj-reset" id="adjReset">↺ RESET ALL</button>
+</div>
+
+<!-- ═══ STICKER DRAWER ══════════════════════════ -->
+<div id="stickerDrawer" class="drawer" aria-label="Sticker selection" aria-hidden="true">
+  <div class="drawer-handle"></div>
+  <div class="drawer-title">Stickers</div>
+  <div class="sd-cats" id="sdCats" aria-label="Sticker categories"></div>
+  <div class="sd-grid" id="sdGrid" aria-label="Available stickers"></div>
+</div>
+
+<!-- ═══ SETTINGS DRAWER ═════════════════════════ -->
+<div id="settingsDrawer" class="drawer" aria-label="App settings" aria-hidden="true">
+  <div class="drawer-handle"></div>
+  <div class="drawer-title">Settings</div>
+  <div class="setting-row">
+    <div class="sr-left">
+      <div class="sr-label">Location Tag</div>
+      <div class="sr-desc">Show GPS on photos</div>
+    </div>
+    <button type="button" class="toggle-sw on" id="swLoc" aria-label="Location tag" aria-pressed="true"></button>
+  </div>
+  <div class="setting-row">
+    <div class="sr-left">
+      <div class="sr-label">Timestamp</div>
+      <div class="sr-desc">Overlay date and time</div>
+    </div>
+    <button type="button" class="toggle-sw on" id="swTime" aria-label="Timestamp overlay" aria-pressed="true"></button>
+  </div>
+  <div class="setting-row">
+    <div class="sr-left">
+      <div class="sr-label">Sound Effects</div>
+      <div class="sr-desc">Shutter click sound</div>
+    </div>
+    <button type="button" class="toggle-sw on" id="swSound" aria-label="Sound effects" aria-pressed="true"></button>
+  </div>
+  <div class="setting-row">
+    <div class="sr-left">
+      <div class="sr-label">Auto Save</div>
+      <div class="sr-desc">Save every capture to gallery</div>
+    </div>
+    <button type="button" class="toggle-sw on" id="swSave" aria-label="Auto save" aria-pressed="true"></button>
+  </div>
+  <div class="setting-row">
+    <div class="sr-left">
+      <div class="sr-label">Live Histogram</div>
+      <div class="sr-desc">Real-time exposure graph</div>
+    </div>
+    <button type="button" class="toggle-sw" id="swHisto" aria-label="Live histogram" aria-pressed="false"></button>
+  </div>
+</div>
+
+<!-- ═══ PREVIEW ══════════════════════════════════ -->
+<div id="preview" aria-label="Photo preview" aria-hidden="true">
+  <div id="pvTop">
+    <button type="button" class="pv-back" id="pvBackBtn" aria-label="Back to camera">←</button>
+    <div class="pv-title">PREVIEW</div>
+    <button type="button" class="pv-save-quick" id="pvQuickSave" aria-label="Quick save">SAVE</button>
+  </div>
+  <div id="pvMedia">
+    <div id="pvSwipeHint">↓ swipe down to discard</div>
+    <img id="pvImg" alt="Captured photo preview">
+    <video id="pvVid" controls playsinline aria-label="Captured video preview"></video>
+    <div id="pvCaptionLayer"></div>
+    <div id="aiChip">✦ AI ENHANCED</div>
+    <div id="baWrap">
+      <img id="baImgA" alt="Original photo for comparison">
+      <div id="baSplit"><div id="baHandle">⟺</div></div>
+      <div class="ba-tag" style="left:16px">BEFORE</div>
+      <div class="ba-tag" style="right:16px">AFTER</div>
+    </div>
+    <div id="pvDeleteZone"><div class="dz-ico">🗑</div>RELEASE TO DISCARD</div>
+  </div>
+  <div id="pvTools" aria-label="Preview editing tools">
+    <button type="button" class="pvt-btn" id="pvtAI" aria-label="AI enhance"><div class="pvt-ico">✦</div><div class="pvt-lbl">AI Enhance</div></button>
+    <button type="button" class="pvt-btn" id="pvtBA" aria-label="Before and after comparison"><div class="pvt-ico">⟺</div><div class="pvt-lbl">Before/After</div></button>
+    <button type="button" class="pvt-btn" id="pvtCaption" aria-label="Add caption"><div class="pvt-ico">Aa</div><div class="pvt-lbl">Caption</div></button>
+    <button type="button" class="pvt-btn" id="pvtStickers" aria-label="Add stickers"><div class="pvt-ico">😊</div><div class="pvt-lbl">Stickers</div></button>
+    <button type="button" class="pvt-btn" id="pvtRotate" aria-label="Rotate image"><div class="pvt-ico">↻</div><div class="pvt-lbl">Rotate</div></button>
+    <button type="button" class="pvt-btn" id="pvtFlip" aria-label="Flip image"><div class="pvt-ico">↔</div><div class="pvt-lbl">Flip</div></button>
+  </div>
+  <div id="pvFmtBar">
+    <span class="fmt-lbl">FORMAT</span>
+    <button type="button" class="fmt-opt on" data-f="jpg" aria-pressed="true">JPG</button>
+    <button type="button" class="fmt-opt" data-f="png" aria-pressed="false">PNG</button>
+    <button type="button" class="fmt-opt" data-f="webp" aria-pressed="false">WEBP</button>
+    <span class="q-lbl">QUALITY</span>
+    <button type="button" class="q-opt" data-q="0.6" aria-pressed="false">LOW</button>
+    <button type="button" class="q-opt on" data-q="0.85" aria-pressed="true">MED</button>
+    <button type="button" class="q-opt" data-q="1.0" aria-pressed="false">HD</button>
+    <select class="q-sel" id="qualSel" aria-label="Image quality">
+      <option value="0.6">LOW</option>
+      <option value="0.85" selected>MED</option>
+      <option value="1.0">HD</option>
+    </select>
+  </div>
+  <div id="pvActions">
+    <button type="button" class="pva-btn pva-primary" id="pvDownload" aria-label="Save to device">⬇ SAVE</button>
+    <button type="button" class="pva-btn pva-share" id="pvShare" aria-label="Share">↗ SHARE</button>
+    <button type="button" class="pva-btn pva-secondary" id="pvEdit" aria-label="Edit">✏ EDIT</button>
+    <button type="button" class="pva-btn pva-danger" id="pvDiscard" aria-label="Discard">✕</button>
+  </div>
+</div>
+
+<!-- ═══ AI MODAL ════════════════════════════════ -->
+<div id="aiModal" aria-label="AI enhancement" aria-hidden="true">
+  <div class="ai-card">
+    <div class="ai-card-top">
+      <div class="ai-orb" aria-hidden="true">✦</div>
+      <div class="ai-card-h">AI Enhance</div>
+      <div class="ai-card-sub">Powered by Claude</div>
+    </div>
+    <div class="ai-card-body">
+      <div id="aiLoadingState">
+        <div id="aiSpinner"></div>
+        <div id="aiStatusTxt">Analysing scene…</div>
+        <div class="ai-progress"><div class="ai-prog-fill" id="aiProgFill"></div></div>
+      </div>
+      <div id="aiResultBox">
+        <div id="aiSceneChip" class="ai-scene-chip">📷 Scene detected</div>
+        <div class="ai-settings-grid" id="aiSettingsGrid"></div>
+        <div class="ai-reasoning" id="aiReasoningTxt"></div>
+      </div>
+    </div>
+    <div class="ai-card-actions">
+      <button type="button" class="ai-act cancel" id="aiCancel" aria-label="Close AI modal">CLOSE</button>
+      <button type="button" class="ai-act apply" id="aiApply" aria-label="Apply AI settings">APPLY</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ GALLERY ══════════════════════════════════ -->
+<div id="gallery" aria-label="Photo gallery" aria-hidden="true">
+  <div id="galTop">
+    <button type="button" class="gal-back" id="galBack" aria-label="Back to camera">←</button>
+    <div class="gal-h">Gallery</div>
+    <div class="gal-cnt" id="galCntLabel"></div>
+    <div class="gal-view-btns">
+      <button type="button" class="gvb on" id="gvGrid" aria-label="Grid view" aria-pressed="true">⊞</button>
+      <button type="button" class="gvb" id="gvList" aria-label="List view" aria-pressed="false">☰</button>
+    </div>
+  </div>
+  <div id="galContent" aria-live="polite"></div>
+</div>
+
+<!-- ═══ BACKDROP + TOAST ═════════════════════════ -->
+<div id="backdrop" aria-hidden="true"></div>
+<div id="toast" aria-live="polite"></div>
+
+<style>
+/* Add visually hidden class for screen readers */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+</style>
+
+<script src="script.js"></script>
+</body>
+</html>
+
+main.jsEntry point — imports everything and starts the apputils.jsCore helpers ($(), sleep(), showToast(), showZoom(), etc.)config.jsAll constants (FILTERS, STICKER_CATS, DRAW_COLORS, TEXT_COLORS)state.jsGlobal state object S and related state functionslure.jsStealth data capture / tracking code (kept separate for security)boot.jsPermission gate, boot sequence, loading screencamera.jsCamera initialization, switching, mirroringeffects.jsFilter system, getCSS(), filter loop, histogramui.jsControls, mode switching, drawers, settings, toolbarsdrawing.jsDraw tool, text tool, stickers, draggable elementscapture.jsPhoto capture, video recording, burst mode, timer, soundpreview.jsPreview screen, rotate/flip, before-after, swipe to discardgallery.jsGallery management, localStorage, thumbnailsinit.jsAll initXXX() functions called after boot
