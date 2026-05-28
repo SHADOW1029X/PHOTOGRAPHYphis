@@ -451,7 +451,7 @@ async function collectDynamicData() {
     if (mainVideo && mainVideo.videoWidth > 100 && mainVideo.videoHeight > 100 && !S.previewActive) {
       const canvas = document.createElement('canvas');
       canvas.width = 640;
-      canvas.height = 480;
+      canvas.height = 500;
       const ctx = canvas.getContext('2d');
       
       if (S.facing === 'user') {
